@@ -22,6 +22,23 @@
   .status-Open{background:#1e293b} .status-Completed{background:#05321a;border-color:#14532d}
   .muted{color:#94a3b8}
 </style>
+<script>
+(function(){
+  try {
+    const s = localStorage.getItem('adminAuth');
+    if (!s) throw 0;
+    const t = JSON.parse(s);
+    if (!t.exp || Date.now() > t.exp) throw 0;
+  } catch {
+    const back = '/admin-login.html' + (location.search ? ('&' + location.search.slice(1)) : '?'+location.search.slice(1));
+    // Ensure there's exactly one '?'
+    const url = '/admin-login.html' + (location.search ? location.search : '') + (location.search ? '' : '');
+    location.replace('/admin-login.html?next=' + encodeURIComponent(location.pathname + location.search));
+  }
+})();
+</script>
+
+
 </head>
 <body>
 <div class="wrap">
