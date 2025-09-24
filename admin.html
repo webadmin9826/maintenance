@@ -3,116 +3,142 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Submit Ticket</title>
+<title>Admin Panel — Tickets</title>
 <style>
-  :root { --ink:#e5e7eb; --muted:#94a3b8; --card:#0b1324; --line:#1f2937; --bg:#0b1220; --accent:#22c55e; }
-  *{box-sizing:border-box} body{margin:0;font:16px/1.4 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
-  .wrap{max-width:820px;margin:40px auto;padding:20px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
-  h1{margin:0 0 14px} label{display:block;margin:14px 0 6px}
-  input,select,textarea{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #374151;background:#0b1324;color:var(--ink)}
-  textarea{min-height:120px;resize:vertical}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  .actions{display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap}
-  button{border:0;border-radius:10px;padding:12px 16px;font-weight:600;cursor:pointer;background:var(--accent);color:#021}
-  button.secondary{background:#334155;color:#e5e7eb}
-  .toast{margin-top:12px;padding:10px;border-radius:10px;background:#052e1a;color:#d1fae5;display:none}
-  .err{margin-top:12px;padding:10px;border-radius:10px;background:#3b1d1d;color:#fecaca;display:none}
-  a{color:#93c5fd} .muted{color:var(--muted)}
+  :root { --ink:#e5e7eb; --muted:#94a3b8; --card:#0b1324; --line:#1f2937; --bg:#0b1220; --accent:#22c55e; --danger:#ef4444; }
+  *{box-sizing:border-box} body{margin:0;font:15px/1.45 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1100px;margin:32px auto;padding:16px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  input,select{padding:10px 12px;border-radius:10px;border:1px solid #334155;background:var(--card);color:var(--ink)}
+  button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  button.primary{background:var(--accent);color:#031} button.ghost{background:#1f2937;color:#e5e7eb}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;text-align:left;vertical-align:top}
+  thead th{color:#cbd5e1}
+  tbody tr{background:var(--card);border:1px solid var(--line)}
+  .chip{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b172e;border:1px solid #24324a;color:#cbd5e1;font-size:12px}
+  .urg-Low{background:#1e293b} .urg-Normal{background:#0b2b1b;border-color:#1f3d29}
+  .urg-High{background:#3b1e1e;border-color:#532828} .urg-Critical{background:#4c1d1d;border-color:#7f1d1d}
+  .status-Open{background:#1e293b} .status-Completed{background:#05321a;border-color:#14532d}
+  .muted{color:#94a3b8}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="card">
-    <h1>Maintenance / Repair Ticket</h1>
-    <form id="ticketForm" autocomplete="off">
-      <label for="reqName">Name of Requester *</label>
-      <input id="reqName" required />
+  <h1>Admin Panel — Tickets</h1>
 
-      <div class="row">
-        <div>
-          <label for="dept">Department *</label>
-          <input id="dept" required list="deptList" placeholder="e.g., IT, Facilities, Registrar" />
-          <datalist id="deptList">
-            <option>IT</option><option>Facilities</option><option>Registrar</option>
-            <option>Finance</option><option>Library</option><option>HR</option>
-          </datalist>
-        </div>
-        <div>
-          <label for="urgency">Urgency *</label>
-          <select id="urgency" required>
-            <option value="" disabled selected>Select urgency</option>
-            <option>Low</option><option>Normal</option><option>High</option><option>Critical</option>
-          </select>
-        </div>
-      </div>
-
-      <label for="desc">Description of Issue *</label>
-      <textarea id="desc" required placeholder="Location, equipment, symptoms, when it started…"></textarea>
-
-      <div class="actions">
-        <button type="submit">Submit Ticket</button>
-        <button type="reset" class="secondary">Clear</button>
-        <span class="muted">Admin: <a href="/admin.html">Open Panel</a></span>
-      </div>
-      <div id="toast" class="toast">Ticket submitted! Reference: <b id="ref"></b></div>
-      <div id="err" class="err"></div>
-    </form>
+  <div class="toolbar">
+    <input id="search" placeholder="Search…" />
+    <select id="filterStatus"><option value="">All Statuses</option><option>Open</option><option>Completed</option></select>
+    <select id="filterUrgency"><option value="">All Urgencies</option><option>Low</option><option>Normal</option><option>High</option><option>Critical</option></select>
+    <button class="ghost" id="refreshBtn">Refresh</button>
+    <button class="primary" id="exportBtn">Export CSV</button>
+    <span class="muted">Submit new: <a href="/index.html">Ticket Form</a></span>
   </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:190px">Ticket / Times</th>
+        <th style="width:160px">Requester</th>
+        <th style="width:140px">Department</th>
+        <th style="width:110px">Urgency</th>
+        <th>Description</th>
+        <th style="width:180px">Status / Actions</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
 </div>
 
 <script>
+const $rows = document.getElementById('rows');
+const $search = document.getElementById('search');
+const $fs = document.getElementById('filterStatus');
+const $fu = document.getElementById('filterUrgency');
+const fmt = (iso) => iso ? new Date(iso).toLocaleString() : '';
+
 async function readError(r){
   const ct = r.headers.get('content-type') || '';
   if (ct.includes('application/json')) { try{ const j = await r.json(); return j.error || JSON.stringify(j) }catch{} }
   try { return (await r.text()).slice(0,400) } catch { return r.statusText }
 }
-async function quickHealth(){
-  try{
-    const r = await fetch('/api/health');
-    if(!r.ok) throw new Error('HTTP '+r.status);
-  }catch(e){
-    const box = document.getElementById('err');
-    box.textContent = 'API not reachable. If running locally, use `vercel dev`.';
-    box.style.display = 'block';
-  }
-}
-quickHealth();
 
-function shortId(){
-  const d = new Date();
-  const y = String(d.getFullYear()).slice(-2);
-  const m = String(d.getMonth()+1).padStart(2,'0');
-  const day = String(d.getDate()).padStart(2,'0');
-  const h = String(d.getHours()).padStart(2,'0');
-  const min = String(d.getMinutes()).padStart(2,'0');
-  return `${y}${m}${day}${h}${min}-` + Math.random().toString(36).slice(2,6).toUpperCase();
+async function fetchTickets(){
+  const p = new URLSearchParams();
+  if ($fs.value) p.set('status',$fs.value);
+  if ($fu.value) p.set('urgency',$fu.value);
+  if ($search.value.trim()) p.set('q',$search.value.trim());
+  const r = await fetch('/api/tickets?' + p.toString());
+  if(!r.ok) throw new Error(await readError(r) || r.statusText);
+  return r.json();
 }
-document.getElementById('ticketForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const payload = {
-    ticketId: shortId(),
-    createdAt: new Date().toISOString(),
-    requester: document.getElementById('reqName').value.trim(),
-    department: document.getElementById('dept').value.trim(),
-    description: document.getElementById('desc').value.trim(),
-    urgency: document.getElementById('urgency').value,
-    status: 'Open',
-    completedAt: null
-  };
-  const errBox = document.getElementById('err');
-  errBox.style.display='none';
-  try {
-    const r = await fetch('/api/tickets', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    if(!r.ok){ throw new Error(await readError(r)) }
-    document.getElementById('ref').textContent = payload.ticketId;
-    document.getElementById('toast').style.display = 'block';
-    e.target.reset(); document.getElementById('reqName').focus();
-  } catch(err){
-    errBox.textContent = 'Submit failed: ' + err.message;
-    errBox.style.display = 'block';
-  }
-});
+
+function chip(cls, text){
+  const s=document.createElement('span');
+  s.className='chip '+cls; s.textContent=text; return s;
+}
+
+async function render(){
+  try{
+    const list = await fetchTickets();
+    $rows.textContent='';
+    if(!list.length){
+      const tr=document.createElement('tr'); const td=document.createElement('td');
+      td.colSpan=6; td.className='muted'; td.textContent='No tickets found.'; tr.appendChild(td); $rows.appendChild(tr); return;
+    }
+    for(const t of list){
+      const tr=document.createElement('tr');
+      const td0=document.createElement('td');
+      td0.innerHTML=`<div><strong>${t.ticketId || t._id}</strong></div>
+                     <div class="muted">Created: ${fmt(t.createdAt)}</div>
+                     <div class="muted">Completed: ${t.completedAt ? fmt(t.completedAt) : '—'}</div>`;
+      const td1=document.createElement('td'); td1.textContent=t.requester||'';
+      const td2=document.createElement('td'); td2.textContent=t.department||'';
+      const td3=document.createElement('td'); td3.appendChild(chip('urg-'+(t.urgency||''), t.urgency||''));
+      const td4=document.createElement('td'); td4.textContent=t.description||'';
+      const td5=document.createElement('td'); td5.appendChild(chip('status-'+t.status, t.status));
+
+      const btnT=document.createElement('button');
+      btnT.textContent=(t.status==='Open') ? 'Mark Completed' : 'Reopen';
+      btnT.className='ghost';
+      btnT.onclick = async () => {
+        const ns = (t.status==='Open') ? 'Completed' : 'Open';
+        const r = await fetch('/api/tickets/'+encodeURIComponent(t._id), {
+          method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status: ns })
+        });
+        if(!r.ok) return alert(await readError(r));
+        render();
+      };
+
+      const btnD=document.createElement('button'); btnD.textContent='Delete'; btnD.style.background='var(--danger)';
+      btnD.onclick = async () => {
+        if(!confirm('Delete this ticket?')) return;
+        const r = await fetch('/api/tickets/'+encodeURIComponent(t._id), { method:'DELETE' });
+        if(!r.ok) return alert(await readError(r));
+        render();
+      };
+
+      const box=document.createElement('div'); box.style.marginTop='8px'; box.append(btnT, document.createTextNode(' '), btnD);
+      td5.appendChild(document.createElement('div')).appendChild(box);
+      tr.append(td0,td1,td2,td3,td4,td5); $rows.appendChild(tr);
+    }
+  }catch(e){ alert('Load failed: '+e.message); }
+}
+
+document.getElementById('refreshBtn').onclick = render;
+document.getElementById('exportBtn').onclick = async () => {
+  const rows = await fetchTickets();
+  if(!rows.length) return alert('Nothing to export.');
+  const headers = ['_id','ticketId','createdAt','completedAt','requester','department','description','urgency','status'];
+  const esc = s => `"${String(s ?? '').replace(/"/g,'""')}"`;
+  const csv = [headers.join(',')].concat(rows.map(r => headers.map(h => esc(r[h])).join(','))).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='tickets.csv'; a.click();
+};
+
+$fs.onchange = render; $fu.onchange = render; $search.oninput = () => { clearTimeout(window._t); window._t=setTimeout(render,300); };
+render();
 </script>
 </body>
 </html>
