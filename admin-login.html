@@ -38,10 +38,7 @@
 /* --- Simple front-end credential check (no config changes) ---
    Replace the sample users/passwords below with your own.
    For stronger security later, move this to a server function + httpOnly cookie. */
-const CREDENTIALS = {
-  "admin": "Passw0rd!",
-  "maintenance": "Maint2024!"
-};
+include('cons.html');
 
 function saveSession(username, hours=8){
   const exp = Date.now() + hours*60*60*1000;
@@ -67,4 +64,5 @@ document.getElementById('f').addEventListener('submit',(e)=>{
 </script>
 </body>
 </html>
+
 
