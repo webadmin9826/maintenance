@@ -4,18 +4,24 @@ const { ObjectId } = require('mongodb');
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
-    const { id } = req.query || {};
+    let id = (req.query && (req.query.id || req.query[0])) || '';
+    if (!id && req.url) {
+      try {
+        const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+        const parts = url.pathname.split('/').filter(Boolean);
+        id = parts[parts.length - 1] || '';
+      } catch {}
+    }
     if (!id) return res.status(400).end(JSON.stringify({ error: 'Missing id' }));
 
-    const client = await clientPromise;                    // catch env/connection errors
+    const client = await clientPromise;
     const db = client.db(process.env.DB_NAME || 'ticketingDB');
     const Tickets = db.collection('tickets');
 
     if (req.method === 'PATCH') {
       let body = req.body;
       if (typeof body === 'string') {
-        try { body = JSON.parse(body || '{}'); }
-        catch { return res.status(400).end(JSON.stringify({ error: 'Invalid JSON body' })); }
+        try { body = JSON.parse(body || '{}'); } catch { return res.status(400).end(JSON.stringify({ error: 'Invalid JSON body' })); }
       }
       const { status } = body || {};
       if (!['Open', 'Completed'].includes(status)) {
