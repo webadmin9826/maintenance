@@ -81,15 +81,24 @@
 </div>
 
 <script>
+async function readError(r){
+  const ct = r.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try { const j = await r.json(); return j.error || JSON.stringify(j); } catch {}
+  }
+  try { return (await r.text()).slice(0,300); } catch { return r.statusText; }
+}
+
 function shortId(){
   const d = new Date();
   const y = String(d.getFullYear()).slice(-2);
   const m = String(d.getMonth()+1).padStart(2,'0');
   const day = String(d.getDate()).padStart(2,'0');
-  const h = String(d.getHours()).slice(-2);
+  const h = String(d.getHours()).padStart(2,'0');   // fixed
   const min = String(d.getMinutes()).padStart(2,'0');
   return `${y}${m}${day}${h}${min}-` + Math.random().toString(36).slice(2,6).toUpperCase();
 }
+
 document.getElementById('ticketForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const payload = {
@@ -103,13 +112,23 @@ document.getElementById('ticketForm').addEventListener('submit', async (e) => {
     completedAt: null
   };
   try {
-    const r = await fetch('/api/tickets', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-    if(!r.ok) throw new Error((await r.json()).error || r.statusText);
+    const r = await fetch('/api/tickets', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!r.ok){
+      const details = await readError(r);
+      throw new Error(`${r.status} ${r.statusText}${details ? ' — ' + details : ''}`);
+    }
     document.getElementById('ref').textContent = payload.ticketId;
     document.getElementById('toast').style.display = 'block';
     e.target.reset(); document.getElementById('reqName').focus();
-  } catch(err){ alert('Submit failed: ' + err.message); }
+  } catch(err){
+    alert('Submit failed: ' + err.message);
+  }
 });
 </script>
+
 </body>
 </html>
