@@ -59,9 +59,17 @@ document.getElementById('f').addEventListener('submit',(e)=>{
     err.style.display = 'block';
     return;
   }
+
   saveSession(u);
-  const type = new URLSearchParams(location.search).get('type') || '';
-  const next = `/admin-classroom-panel.html${type ? ('?type=' + encodeURIComponent(type)) : ''}`;
+
+  // Decide destination based on ?type=
+  const t = (new URLSearchParams(location.search).get('type') || '').toLowerCase();
+  let next = '/admin.html'; // default to Equipment admin selection page
+  if (t === 'classroom' || t === 'facility' || t === 'classroom/facility') {
+    next = '/admin-classroom-panel.html';
+  } else if (t === 'equipment') {
+    next = '/admin.html';
+  }
   location.replace(next);
 });
 </script>
