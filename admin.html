@@ -1,1 +1,134 @@
-<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Admin</title></head><body><h1>Admin</h1><button id='r'>Refresh</button><table id='t' border='1' cellpadding='6'><thead><tr><th>ID</th><th>Requester</th><th>Dept</th><th>Urgency</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table><script>async function load(){const r=await fetch('/api/tickets');const rows=await r.json();const tb=document.querySelector('#t tbody');tb.innerHTML='';for(const x of rows){const tr=document.createElement('tr');tr.innerHTML=`<td>${x.ticketId||x._id}</td><td>${x.requester}</td><td>${x.department}</td><td>${x.urgency}</td><td>${x.status}</td><td><button data-id='${x._id}' data-s='${x.status}'>Toggle</button> <button data-did='${x._id}'>Delete</button></td>`;tb.appendChild(tr);}tb.onclick=async(e)=>{if(e.target.dataset.id){const id=e.target.dataset.id;const ns=e.target.dataset.s==='Open'?'Completed':'Open';await fetch('/api/tickets/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:ns})});load();}if(e.target.dataset.did){const id=e.target.dataset.did;if(confirm('Delete?')){await fetch('/api/tickets/'+id,{method:'DELETE'});load();}}};}document.getElementById('r').onclick=load;load();</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Admin Panel — Tickets</title>
+<style>
+  :root { --ink:#e5e7eb; --muted:#94a3b8; --card:#0b1324; --line:#1f2937; --bg:#0b1220; --accent:#22c55e; --danger:#ef4444; }
+  *{box-sizing:border-box} body{margin:0;font:15px/1.45 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1100px;margin:32px auto;padding:16px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  input,select{padding:10px 12px;border-radius:10px;border:1px solid #334155;background:var(--card);color:var(--ink)}
+  button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  button.primary{background:var(--accent);color:#031} button.ghost{background:#1f2937;color:#e5e7eb}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;text-align:left;vertical-align:top}
+  thead th{color:#cbd5e1}
+  tbody tr{background:var(--card);border:1px solid var(--line)}
+  .chip{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b172e;border:1px solid #24324a;color:#cbd5e1;font-size:12px}
+  .urg-Low{background:#1e293b} .urg-Normal{background:#0b2b1b;border-color:#1f3d29}
+  .urg-High{background:#3b1e1e;border-color:#532828} .urg-Critical{background:#4c1d1d;border-color:#7f1d1d}
+  .status-Open{background:#1e293b} .status-Completed{background:#05321a;border-color:#14532d}
+  .muted{color:#94a3b8}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Admin Panel — Tickets</h1>
+
+  <div class="toolbar">
+    <input id="search" placeholder="Search…" />
+    <select id="filterStatus"><option value="">All Statuses</option><option>Open</option><option>Completed</option></select>
+    <select id="filterUrgency"><option value="">All Urgencies</option><option>Low</option><option>Normal</option><option>High</option><option>Critical</option></select>
+    <button class="ghost" id="refreshBtn">Refresh</button>
+    <button class="primary" id="exportBtn">Export CSV</button>
+    <span class="muted">Submit new: <a href="/index.html">Ticket Form</a></span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:190px">Ticket / Times</th>
+        <th style="width:160px">Requester</th>
+        <th style="width:140px">Department</th>
+        <th style="width:110px">Urgency</th>
+        <th>Description</th>
+        <th style="width:180px">Status / Actions</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<script>
+const $rows = document.getElementById('rows');
+const $search = document.getElementById('search');
+const $fs = document.getElementById('filterStatus');
+const $fu = document.getElementById('filterUrgency');
+const fmt = (iso) => iso ? new Date(iso).toLocaleString() : '';
+
+async function fetchTickets(){
+  const p = new URLSearchParams();
+  if ($fs.value) p.set('status',$fs.value);
+  if ($fu.value) p.set('urgency',$fu.value);
+  if ($search.value.trim()) p.set('q',$search.value.trim());
+  const r = await fetch('/api/tickets?' + p.toString());
+  if(!r.ok) throw new Error((await r.json()).error || r.statusText);
+  return r.json();
+}
+
+function chip(cls, text){
+  const s=document.createElement('span');
+  s.className='chip '+cls; s.textContent=text; return s;
+}
+
+async function render(){
+  try{
+    const list = await fetchTickets();
+    $rows.textContent='';
+    if(!list.length){
+      const tr=document.createElement('tr'); const td=document.createElement('td');
+      td.colSpan=6; td.className='muted'; td.textContent='No tickets found.'; tr.appendChild(td); $rows.appendChild(tr); return;
+    }
+    for(const t of list){
+      const tr=document.createElement('tr');
+      const td0=document.createElement('td');
+      td0.innerHTML=`<div><strong>${t.ticketId || t._id}</strong></div>
+                     <div class="muted">Created: ${fmt(t.createdAt)}</div>
+                     <div class="muted">Completed: ${t.completedAt ? fmt(t.completedAt) : '—'}</div>`;
+      const td1=document.createElement('td'); td1.textContent=t.requester||'';
+      const td2=document.createElement('td'); td2.textContent=t.department||'';
+      const td3=document.createElement('td'); td3.appendChild(chip('urg-'+(t.urgency||''), t.urgency||''));
+      const td4=document.createElement('td'); td4.textContent=t.description||'';
+      const td5=document.createElement('td'); td5.appendChild(chip('status-'+t.status, t.status));
+
+      const btnT=document.createElement('button');
+      btnT.textContent=(t.status==='Open') ? 'Mark Completed' : 'Reopen';
+      btnT.className='ghost';
+      btnT.onclick = async () => {
+        const ns = (t.status==='Open') ? 'Completed' : 'Open';
+        await fetch('/api/tickets/'+t._id, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ status: ns }) });
+        render();
+      };
+
+      const btnD=document.createElement('button'); btnD.textContent='Delete'; btnD.style.background='var(--danger)';
+      btnD.onclick = async () => {
+        if(!confirm('Delete this ticket?')) return;
+        await fetch('/api/tickets/'+t._id, { method:'DELETE' });
+        render();
+      };
+
+      const box=document.createElement('div'); box.style.marginTop='8px'; box.append(btnT, document.createTextNode(' '), btnD);
+      td5.appendChild(document.createElement('div')).appendChild(box);
+      tr.append(td0,td1,td2,td3,td4,td5); $rows.appendChild(tr);
+    }
+  }catch(e){ alert('Load failed: '+e.message); }
+}
+
+document.getElementById('refreshBtn').onclick = render;
+document.getElementById('exportBtn').onclick = async () => {
+  const rows = await fetchTickets();
+  if(!rows.length) return alert('Nothing to export.');
+  const headers = ['_id','ticketId','createdAt','completedAt','requester','department','description','urgency','status'];
+  const esc = s => `"${String(s ?? '').replace(/"/g,'""')}"`;
+  const csv = [headers.join(',')].concat(rows.map(r => headers.map(h => esc(r[h])).join(','))).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='tickets.csv'; a.click();
+};
+
+$fs.onchange = render; $fu.onchange = render; $search.oninput = () => { clearTimeout(window._t); window._t=setTimeout(render,300); };
+render();
+</script>
+</body>
+</html>
