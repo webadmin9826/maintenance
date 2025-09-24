@@ -1,24 +1,23 @@
-
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Admin — Select Area</title>
-<style>
-  :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--accent2:#60a5fa}
-  *{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
-  .wrap{max-width:920px;margin:48px auto;padding:20px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
-  h1{margin:0 0 8px}.muted{color:var(--muted);margin:0 0 16px}
-  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:12px}
-  .opt{display:block;text-decoration:none;color:inherit;border:1px solid var(--line);background:#0b1324;border-radius:14px;padding:22px;transition:transform .08s ease, box-shadow .08s ease, border-color .15s}
-  .opt:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,.35);border-color:#2b3b55}
-  .opt h2{margin:0 0 8px;font-size:20px}.opt p{margin:0;color:var(--muted)}
-  .equip{border-left:6px solid var(--accent)} .room{border-left:6px solid var(--accent2)}
-  .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
-  .btn{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:600;border:1px solid var(--line);color:var(--ink)}
-</style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Admin — Select Area</title>
+  <style>
+    :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--accent2:#60a5fa}
+    *{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+    .wrap{max-width:920px;margin:48px auto;padding:20px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+    h1{margin:0 0 8px}.muted{color:var(--muted);margin:0 0 16px}
+    .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:12px}
+    .opt{display:block;text-decoration:none;color:inherit;border:1px solid var(--line);background:#0b1324;border-radius:14px;padding:22px;transition:transform .08s ease, box-shadow .08s ease, border-color .15s}
+    .opt:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(0,0,0,.35);border-color:#2b3b55}
+    .opt h2{margin:0 0 8px;font-size:20px}.opt p{margin:0;color:var(--muted)}
+    .equip{border-left:6px solid var(--accent)} .room{border-left:6px solid var(--accent2)}
+    .row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+    .btn{display:inline-block;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:600;border:1px solid var(--line);color:var(--ink)}
+  </style>
 </head>
 <body>
 <div class="wrap">
@@ -27,38 +26,20 @@
     <p class="muted">Select the maintenance domain to administer.</p>
 
     <div class="grid">
-      <a class="opt equip" href="/admin.html?type=Equipment">
+      <a class="opt equip" href="/admin-login.html?type=Equipment">
         <h2>Equipment Administration</h2>
-        <p>Tickets related to devices, tools, computers, and equipment.</p>
+        <p>Devices, tools, computers, laboratory or office equipment.</p>
       </a>
-      <a class="opt room" href="/admin.html?type=Classroom">
+      <a class="opt room" href="/admin-login.html?type=Classroom">
         <h2>Classroom / Facility Administration</h2>
-        <p>Tickets concerning rooms, furniture, HVAC, electrical, and similar.</p>
+        <p>Rooms, furniture, HVAC, electrical, plumbing, and similar.</p>
       </a>
     </div>
 
     <div class="row">
       <a class="btn" href="/index.html">Back to Maintenance Landing</a>
-      <a class="btn" href="#" id="logoutBtn">Sign Out</a>
     </div>
   </div>
 </div>
-
-<script>
-// Require login (front-end gate)
-(function(){
-  try {
-    const s = localStorage.getItem('adminAuth');
-    if (!s) throw 0;
-    const t = JSON.parse(s);
-    if (!t.exp || Date.now() > t.exp) throw 0;
-  } catch {
-    location.replace('/admin-login.html?next=' + encodeURIComponent(location.pathname + location.search));
-  }
-})();
-document.getElementById('logoutBtn').onclick = (e)=>{
-  e.preventDefault(); localStorage.removeItem('adminAuth'); location.replace('/admin-login.html');
-};
-</script>
 </body>
 </html>
