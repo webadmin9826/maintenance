@@ -61,7 +61,7 @@ document.getElementById('f').addEventListener('submit',(e)=>{
   }
   saveSession(u);
   const type = new URLSearchParams(location.search).get('type') || '';
-  const next = `/admin-panel.html${type ? ('?type=' + encodeURIComponent(type)) : ''}`;
+  const next = `/admin-classroom-panel.html${type ? ('?type=' + encodeURIComponent(type)) : ''}`;
   location.replace(next);
 });
 </script>
