@@ -23,42 +23,45 @@
     <h1>Administrator Access</h1>
     <p>Please sign in to continue.</p>
     <form id="f" autocomplete="off">
-      <label for="uid">Institution Email</label>
-      <input id="uid" type="email" placeholder="name@school.edu" required>
-      <label for="pw">Access Code</label>
-      <input id="pw" type="password" placeholder="Enter access code" required>
+      <label for="uid">Username</label>
+      <input id="uid" required autofocus placeholder="Enter username">
+      <label for="pw">Password</label>
+      <input id="pw" type="password" required placeholder="Enter password">
       <button type="submit">Sign In</button>
       <div id="err" class="err"></div>
     </form>
-    <p style="margin-top:16px">Need help? Contact the system administrator.</p>
+    <p style="margin-top:16px"><a href="/admin.html">Back</a></p>
   </div>
 </div>
 
 <script>
-/* --- Minimal front-end gate (no config changes) ---
-   Change ACCESS_CODE to your chosen code (kept client-side).
-   For better security later, swap to a server function + httpOnly cookie. */
-const ACCESS_CODE = "ADMIN-ACCESS-2024"; // <-- set your code here
+/* --- Simple front-end credential check (no config changes) ---
+   Replace the sample users/passwords below with your own.
+   For stronger security later, move this to a server function + httpOnly cookie. */
+const CREDENTIALS = {
+  "admin": "Passw0rd!",
+  "maintenance": "Maint2024!"
+};
 
-function saveSession(hours=8){
+function saveSession(username, hours=8){
   const exp = Date.now() + hours*60*60*1000;
-  localStorage.setItem("adminAuth", JSON.stringify({ exp, at: new Date().toISOString() }));
+  localStorage.setItem("adminAuth", JSON.stringify({ user: username, exp, at: new Date().toISOString() }));
 }
 
-document.getElementById('f').addEventListener('submit', (e)=>{
+document.getElementById('f').addEventListener('submit',(e)=>{
   e.preventDefault();
-  const email = document.getElementById('uid').value.trim();
-  const code  = document.getElementById('pw').value;
+  const u = document.getElementById('uid').value.trim();
+  const p = document.getElementById('pw').value;
   const err = document.getElementById('err'); err.style.display='none';
 
-  if (!email.endsWith('.edu') && !email.endsWith('.edu.ph')) {
-    // soft hint; you can remove this if not needed
+  if (!CREDENTIALS[u] || CREDENTIALS[u] !== p){
+    err.textContent = "Invalid username or password.";
+    err.style.display = 'block';
+    return;
   }
-  if (code !== ACCESS_CODE){
-    err.textContent = "Invalid access credentials."; err.style.display='block'; return;
-  }
-  saveSession();
-  const next = new URLSearchParams(location.search).get('next') || '/admin-portal.html';
+  saveSession(u);
+  const type = new URLSearchParams(location.search).get('type') || '';
+  const next = `/admin-panel.html${type ? ('?type=' + encodeURIComponent(type)) : ''}`;
   location.replace(next);
 });
 </script>
