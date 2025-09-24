@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Admin Login</title>
+<style>
+  :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e}
+  *{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:460px;margin:64px auto;padding:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+  h1{margin:0 0 12px}p{margin:0 0 16px;color:var(--muted)}
+  label{display:block;margin:12px 0 6px}
+  input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #374151;background:#0b1324;color:var(--ink)}
+  button{margin-top:14px;border:0;border-radius:10px;padding:12px 16px;font-weight:600;cursor:pointer;background:var(--accent);color:#021;width:100%}
+  .err{margin-top:12px;padding:10px;border-radius:10px;background:#3b1d1d;color:#fecaca;display:none}
+  a{color:#93c5fd}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Administrator Access</h1>
+    <p>Please sign in to continue.</p>
+    <form id="f" autocomplete="off">
+      <label for="uid">Institution Email</label>
+      <input id="uid" type="email" placeholder="name@school.edu" required>
+      <label for="pw">Access Code</label>
+      <input id="pw" type="password" placeholder="Enter access code" required>
+      <button type="submit">Sign In</button>
+      <div id="err" class="err"></div>
+    </form>
+    <p style="margin-top:16px">Need help? Contact the system administrator.</p>
+  </div>
+</div>
+
+<script>
+/* --- Minimal front-end gate (no config changes) ---
+   Change ACCESS_CODE to your chosen code (kept client-side).
+   For better security later, swap to a server function + httpOnly cookie. */
+const ACCESS_CODE = "ADMIN-ACCESS-2024"; // <-- set your code here
+
+function saveSession(hours=8){
+  const exp = Date.now() + hours*60*60*1000;
+  localStorage.setItem("adminAuth", JSON.stringify({ exp, at: new Date().toISOString() }));
+}
+
+document.getElementById('f').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const email = document.getElementById('uid').value.trim();
+  const code  = document.getElementById('pw').value;
+  const err = document.getElementById('err'); err.style.display='none';
+
+  if (!email.endsWith('.edu') && !email.endsWith('.edu.ph')) {
+    // soft hint; you can remove this if not needed
+  }
+  if (code !== ACCESS_CODE){
+    err.textContent = "Invalid access credentials."; err.style.display='block'; return;
+  }
+  saveSession();
+  const next = new URLSearchParams(location.search).get('next') || '/admin-portal.html';
+  location.replace(next);
+});
+</script>
+</body>
+</html>
