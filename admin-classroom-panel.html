@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Admin — Classroom / Facility Tickets</title>
+<style>
+:root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+.wrap{max-width:1200px;margin:32px auto;padding:16px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+input,select{padding:10px 12px;border-radius:10px;border:1px solid #334155;background:var(--card);color:var(--ink)}
+button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+button.primary{background:var(--accent);color:#031}button.ghost{background:#1f2937;color:#e5e7eb}
+table{width:100%;border-collapse:separate;border-spacing:0 8px}
+th,td{padding:10px 12px;text-align:left;vertical-align:top}
+thead th{color:#cbd5e1}tbody tr{background:var(--card);border:1px solid var(--line)}
+.chip{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b172e;border:1px solid #24324a;color:#cbd5e1;font-size:12px}
+.status-Open{background:#1e293b}.status-Completed{background:#05321a;border-color:#14532d}.muted{color:#94a3b8}
+</style>
+</head>
+<body>
+
+<script>
+(function(){
+  try{const s=localStorage.getItem('adminAuth');if(!s)throw 0;const t=JSON.parse(s);if(!t.exp||Date.now()>t.exp)throw 0;}
+  catch{location.replace('/admin-login.html?next='+encodeURIComponent(location.pathname+location.search));}
+})();
+</script>
+
+<div class="wrap">
+  <h1>Classroom / Facility Tickets (Admin)</h1>
+  <div class="toolbar">
+    <input id="search" placeholder="Search…">
+    <select id="filterStatus"><option value="">All Statuses</option><option>Open</option><option>Completed</option></select>
+    <button class="ghost" id="refreshBtn">Refresh</button>
+    <button class="primary" id="exportBtn">Export CSV</button>
+    <a class="ghost" href="/admin.html" style="text-decoration:none;display:inline-block;padding:10px;border-radius:10px">Back to Admin Areas</a>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:200px">Reference / Times</th>
+        <th style="width:140px">Requester</th>
+        <th style="width:140px">Department</th>
+        <th style="width:150px">Particulars</th>
+        <th style="width:180px">Location</th>
+        <th>Description of Repair</th>
+        <th style="width:170px">Status / Actions</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<script>
+const $rows=document.getElementById('rows');
+const $search=document.getElementById('search');
+const $fs=document.getElementById('filterStatus');
+const fmt=iso=>iso?new Date(iso).toLocaleString():'';
+
+async function readError(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j);}catch{}}try{return (await r.text()).slice(0,400);}catch{return r.statusText;}}
+
+async function fetchRows(){
+  const p=new URLSearchParams(); if($fs.value)p.set('status',$fs.value); if($search.value.trim())p.set('q',$search.value.trim());
+  const r=await fetch('/api/classroomtickets?'+p.toString());
+  if(!r.ok) throw new Error(await readError(r) || r.statusText);
+  return r.json();
+}
+
+function chip(cls,text){const s=document.createElement('span');s.className='chip '+cls;s.textContent=text;return s;}
+
+async function render(){
+  try{
+    const list=await fetchRows();
+    $rows.textContent='';
+    if(!list.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.className='muted';td.textContent='No tickets found.';tr.appendChild(td);$rows.appendChild(tr);return;}
+    for(const t of list){
+      const tr=document.createElement('tr');
+      const td0=document.createElement('td');
+      td0.innerHTML=`<div><strong>${t.reference||t._id}</strong></div><div class="muted">Filed: ${fmt(t.dateFiled)||fmt(t.createdAt)}</div><div class="muted">Completed: ${t.completedAt?fmt(t.completedAt):'—'}</div>`;
+      const td1=document.createElement('td'); td1.textContent=t.requester||'';
+      const td2=document.createElement('td'); td2.textContent=t.department||'';
+      const td3=document.createElement('td'); td3.textContent=t.particulars||'';
+      const td4=document.createElement('td'); td4.textContent=t.location||'';
+      const td5=document.createElement('td'); td5.textContent=t.description||'';
+      const td6=document.createElement('td'); td6.appendChild(chip('status-'+t.status,(t.status||'').toString()));
+
+      const btnT=document.createElement('button'); btnT.textContent=(t.status==='Open')?'Mark Completed':'Reopen'; btnT.className='ghost';
+      btnT.onclick=async()=>{const ns=(t.status==='Open')?'Completed':'Open'; const r=await fetch('/api/classroomtickets/'+encodeURIComponent(t._id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:ns})}); if(!r.ok)return alert(await readError(r)); render();};
+
+      const btnD=document.createElement('button'); btnD.textContent='Delete'; btnD.style.background='var(--danger)';
+      btnD.onclick=async()=>{if(!confirm('Delete this ticket?'))return; const r=await fetch('/api/classroomtickets/'+encodeURIComponent(t._id),{method:'DELETE'}); if(!r.ok)return alert(await readError(r)); render();};
+
+      const box=document.createElement('div'); box.style.marginTop='8px'; box.append(btnT,document.createTextNode(' '),btnD);
+      td6.appendChild(document.createElement('div')).appendChild(box);
+
+      tr.append(td0,td1,td2,td3,td4,td5,td6); $rows.appendChild(tr);
+    }
+  }catch(e){ alert('Load failed: '+e.message); }
+}
+
+document.getElementById('refreshBtn').onclick=render;
+document.getElementById('exportBtn').onclick=async()=>{
+  const rows=await fetchRows(); if(!rows.length) return alert('Nothing to export.');
+  const headers=['_id','reference','dateFiled','completedAt','requester','department','particulars','location','description','status'];
+  const esc=s=>`"${String(s??'').replace(/"/g,'""')}"`;
+  const csv=[headers.join(',')].concat(rows.map(r=>headers.map(h=>esc(r[h])).join(','))).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='classroom_tickets.csv'; a.click();
+};
+
+$fs.onchange=render; $search.oninput=()=>{clearTimeout(window._t); window._t=setTimeout(render,300);}; render();
+</script>
+</body>
+</html>
