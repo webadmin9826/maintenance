@@ -3,16 +3,16 @@ const clientPromise = require('../../lib/mongo');
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
-    const client = await clientPromise;                    // catch env/connection errors
+    const client = await clientPromise;
     const db = client.db(process.env.DB_NAME || 'ticketingDB');
     const Tickets = db.collection('tickets');
 
     if (req.method === 'POST') {
       let doc = req.body;
       if (typeof doc === 'string') {
-        try { doc = JSON.parse(doc || '{}'); }
-        catch { return res.status(400).end(JSON.stringify({ error: 'Invalid JSON body' })); }
+        try { doc = JSON.parse(doc || '{}'); } catch { return res.status(400).end(JSON.stringify({ error: 'Invalid JSON body' })); }
       }
+      doc = doc || {};
       if (!doc.requester || !doc.department || !doc.description || !doc.urgency) {
         return res.status(400).end(JSON.stringify({ error: 'All fields are required.' }));
       }
