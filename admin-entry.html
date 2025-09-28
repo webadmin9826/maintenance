@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Registrar — Log Incoming / Outgoing</title>
+<style>
+  :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
+  *{box-sizing:border-box}body{margin:0;font:15px/1.48 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1100px;margin:36px auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+  h1{margin:0 0 10px}.muted{color:var(--muted)}
+  label{display:block;margin:10px 0 6px}
+  input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1324;color:var(--ink)}
+  textarea{min-height:120px;resize:vertical}
+  .row{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .primary{background:var(--accent);color:#031}
+  .ghost{background:#1f2937;color:#e5e7eb}
+  .danger{background:var(--danger);color:#ffe4e6}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;text-align:left;vertical-align:top}
+  thead th{color:#cbd5e1}
+  tbody tr{background:var(--card);border:1px solid var(--line)}
+  .chip{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b172e;border:1px solid #24324a;color:#cbd5e1;font-size:12px}
+</style>
+</head>
+<body>
+<script>(function(){ if(localStorage.getItem('regAdmin')!=='1') location.replace('/admin-login.html'); })();</script>
+<div class="wrap">
+  <div class="card">
+    <h1>Incoming / Outgoing Requests</h1>
+    <p class="muted">Fields follow the daily log template.</p>
+    <form id="form">
+      <div class="row">
+        <div><label>Student ID</label><input id="sid"></div>
+        <div><label>Student Name *</label><input id="sname" required></div>
+        <div><label>Type of Request *</label><input id="rtype" required placeholder="e.g., Transcript, TOR, Certificate"></div>
+        <div><label>Date Received *</label><input id="dr" type="datetime-local" required></div>
+        <div><label>Schedule for Release</label><input id="sched" type="datetime-local"></div>
+        <div><label>Target Time (Days)</label><input id="target" type="number" min="0" step="1" placeholder="e.g., 3"></div>
+        <div><label>Staff In-Charge</label><input id="staff"></div>
+      </div>
+      <label>Remarks</label><textarea id="remarks" placeholder="Notes / special instructions"></textarea>
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="primary" type="submit">Save as Incoming</button>
+        <button class="ghost" type="button" id="saveOutgoing">Save as Outgoing (Released Now)</button>
+        <a class="ghost" href="/admin-update.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Go to Update</a>
+      </div>
+      <div id="msg" class="muted" style="margin-top:10px"></div>
+    </form>
+  </div>
+</div>
+<script>
+async function postTicket(doc){
+  const r=await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)});
+  if(!r.ok) throw new Error(await r.text()); return r.json();
+}
+document.getElementById('form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
+    dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
+    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
+    status: 'Received' };
+  const out=await postTicket(doc); msg.textContent='Saved ticket '+(out.ref||out._id);
+  e.target.reset();
+});
+document.getElementById('saveOutgoing').onclick=async()=>{
+  if(!sname.value||!rtype.value||!dr.value){ alert('Fill Student Name, Type, and Date Received'); return; }
+  const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
+    dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
+    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
+    dateRelease: new Date().toISOString(), status: 'Released' };
+  const out=await postTicket(doc); msg.textContent='Saved outgoing ticket '+(out.ref||out._id); form.reset();
+};
+</script>
+</body></html>

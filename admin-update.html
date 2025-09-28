@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Registrar — Update Requests</title>
+<style>
+  :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
+  *{box-sizing:border-box}body{margin:0;font:15px/1.48 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1100px;margin:36px auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+  h1{margin:0 0 10px}.muted{color:var(--muted)}
+  label{display:block;margin:10px 0 6px}
+  input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1324;color:var(--ink)}
+  textarea{min-height:120px;resize:vertical}
+  .row{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .primary{background:var(--accent);color:#031}
+  .ghost{background:#1f2937;color:#e5e7eb}
+  .danger{background:var(--danger);color:#ffe4e6}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;text-align:left;vertical-align:top}
+  thead th{color:#cbd5e1}
+  tbody tr{background:var(--card);border:1px solid var(--line)}
+  .chip{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b172e;border:1px solid #24324a;color:#cbd5e1;font-size:12px}
+</style>
+</head>
+<body>
+<script>(function(){ if(localStorage.getItem('regAdmin')!=='1') location.replace('/admin-login.html'); })();</script>
+<div class="wrap">
+  <div class="card">
+    <h1>Update Requests</h1>
+    <div class="toolbar">
+      <input id="q" placeholder="Search by name, ID, request type...">
+      <select id="fs"><option value="">All</option><option>Received</option><option>Released</option></select>
+      <button class="ghost" id="refresh">Refresh</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:190px">Ticket / Dates</th>
+        <th style="width:160px">Student</th>
+        <th style="width:150px">Request Type</th>
+        <th style="width:120px">Target (days)</th>
+        <th>Remarks</th>
+        <th style="width:210px">Actions</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+const $rows=document.getElementById('rows'), $q=document.getElementById('q'), $fs=document.getElementById('fs');
+function fmt(iso){return iso? new Date(iso).toLocaleString():''}
+async function readErr(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j)}catch{}}try{return (await r.text()).slice(0,400)}catch{return r.statusText}}
+async function fetchList(){
+  const p=new URLSearchParams(); if($q.value.trim())p.set('q',$q.value.trim()); if($fs.value)p.set('status',$fs.value);
+  const r=await fetch('/api/ticket?'+p.toString()); if(!r.ok) throw new Error(await readErr(r)); return r.json();
+}
+async function patch(id, body){const r=await fetch('/api/ticket/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok) throw new Error(await readErr(r)); return r.json();}
+async function del(id){const r=await fetch('/api/ticket/'+id,{method:'DELETE'}); if(!r.ok) throw new Error(await readErr(r)); return r.json();}
+async function render(){
+  const list=await fetchList(); $rows.textContent='';
+  if(!list.length){const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=6; td.textContent='No records.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr); return;}
+  for(const t of list){
+    const tr=document.createElement('tr');
+    const td0=document.createElement('td'); td0.innerHTML='<div><strong>'+(t.ref||t._id)+'</strong></div>'+
+      '<div class="muted">Received: '+fmt(t.dateReceived)+'</div>'+
+      '<div class="muted">Released: '+(t.dateRelease?fmt(t.dateRelease):'—')+'</div>';
+    const td1=document.createElement('td'); td1.textContent=(t.studentName||'')+(t.studentId? ' ('+t.studentId+')':'');
+    const td2=document.createElement('td'); td2.textContent=t.requestType||'';
+    const td3=document.createElement('td'); td3.textContent=(t.targetDays??'');
+    const td4=document.createElement('td'); td4.textContent=t.remarks||'';
+    const td5=document.createElement('td');
+    const b1=document.createElement('button'); b1.className='ghost'; b1.textContent=t.status==='Received'?'Mark Released':'Mark Received';
+    b1.onclick=async()=>{ const ns=t.status==='Received'?'Released':'Received'; const set={status:ns}; if(ns==='Released') set.dateRelease=new Date().toISOString(); else set.dateRelease=null; await patch(t._id,set); render(); };
+    const b2=document.createElement('button'); b2.className='danger'; b2.textContent='Delete'; b2.style.marginLeft='6px'; b2.onclick=async()=>{ if(!confirm('Delete ticket?'))return; await del(t._id); render(); };
+    const b3=document.createElement('button'); b3.className='ghost'; b3.textContent='Edit Target'; b3.style.marginLeft='6px'; b3.onclick=async()=>{ const v=prompt('Target days', t.targetDays??''); if(v===null) return; await patch(t._id,{targetDays: Number(v)||null}); render(); };
+    td5.append(b1,b3,b2); tr.append(td0,td1,td2,td3,td4,td5); $rows.appendChild(tr);
+  }
+}
+document.getElementById('refresh').onclick=render; $q.oninput=()=>{clearTimeout(window._t); window._t=setTimeout(render,300);} 
+$fs.onchange=render; render();
+</script>
+</body></html>

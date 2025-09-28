@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Track Request — Registrar</title>
+<style>
+  :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
+  *{box-sizing:border-box}body{margin:0;font:15px/1.48 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1100px;margin:36px auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+  h1{margin:0 0 10px}.muted{color:var(--muted)}
+  label{display:block;margin:10px 0 6px}
+  input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1324;color:var(--ink)}
+  textarea{min-height:120px;resize:vertical}
+  .row{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .primary{background:var(--accent);color:#031}
+  .ghost{background:#1f2937;color:#e5e7eb}
+  .danger{background:var(--danger);color:#ffe4e6}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;text-align:left;vertical-align:top}
+  thead th{color:#cbd5e1}
+  tbody tr{background:var(--card);border:1px solid var(--line)}
+  .chip{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b172e;border:1px solid #24324a;color:#cbd5e1;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Student Request Tracking</h1>
+    <p class="muted">Enter your Student ID or Name to view the status of your registrar requests.</p>
+    <div class="toolbar">
+      <input id="q" placeholder="e.g., 2023-0001 or Juan Dela Cruz">
+      <button class="ghost" id="searchBtn">Search</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:180px">Ticket / Dates</th>
+        <th style="width:160px">Student</th>
+        <th style="width:160px">Request Type</th>
+        <th>Remarks</th>
+        <th style="width:140px">Status</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+const $rows = document.getElementById('rows'); const $q = document.getElementById('q');
+async function readErr(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j)}catch{}}try{return (await r.text()).slice(0,400)}catch{return r.statusText}}
+function fmt(iso){return iso? new Date(iso).toLocaleString():''}
+async function search(){
+  const r = await fetch('/api/ticket?q='+encodeURIComponent($q.value.trim()));
+  if(!r.ok) return alert(await readErr(r));
+  const list = await r.json(); $rows.textContent='';
+  if(!list.length) { const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=5; td.textContent='No records found.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr); return; }
+  for(const t of list){
+    const tr=document.createElement('tr');
+    const td0=document.createElement('td'); td0.innerHTML='<div><strong>'+ (t.ref||t._id) +'</strong></div>'+
+      '<div class="muted">Received: '+fmt(t.dateReceived)+'</div>'+
+      '<div class="muted">Released: '+(t.dateRelease?fmt(t.dateRelease):'—')+'</div>';
+    const td1=document.createElement('td'); td1.textContent=(t.studentName||'') + (t.studentId? ' ('+t.studentId+')':'');
+    const td2=document.createElement('td'); td2.textContent=t.requestType||'';
+    const td3=document.createElement('td'); td3.textContent=t.remarks||'';
+    const td4=document.createElement('td'); const s=document.createElement('span'); s.className='chip'; s.textContent=t.status||'Received'; td4.appendChild(s);
+    tr.append(td0,td1,td2,td3,td4); $rows.appendChild(tr);
+  }
+}
+document.getElementById('searchBtn').onclick=search;
+$q.addEventListener('keydown',e=>{ if(e.key==='Enter') search(); });
+</script>
+</body></html>
