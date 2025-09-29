@@ -34,6 +34,9 @@
       <input id="from" type="date"> <span class="muted">to</span>
       <input id="to" type="date">
       <button class="ghost" id="go">Generate</button>
+      <button class="ghost" id="expW">Export Weekly (CSV)</button>
+      <button class="ghost" id="expM">Export Monthly (CSV)</button>
+      <button class="ghost" id="expT">Export Tickets (CSV)</button>
       <a class="ghost" href="/admin-entry.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Entry</a>
       <a class="ghost" href="/admin-update.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Update</a>
     </div>
@@ -48,6 +51,7 @@
   </div>
 </div>
 <script>
+let _weekly=[], _monthly=[];
 const $w=document.getElementById('weekly'), $m=document.getElementById('monthly');
 async function readErr(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j)}catch{}}try{return (await r.text()).slice(0,400)}catch{return r.statusText}}
 function fmt(d){return new Date(d).toLocaleDateString();}
@@ -55,8 +59,69 @@ document.getElementById('go').onclick=async()=>{
   const p=new URLSearchParams(); if(from.value) p.set('from', from.value); if(to.value) p.set('to', to.value);
   const rw=await fetch('/api/reports/weekly?'+p.toString()); if(!rw.ok) return alert(await readErr(rw)); const w=await rw.json();
   const rm=await fetch('/api/reports/monthly?'+p.toString()); if(!rm.ok) return alert(await readErr(rm)); const m=await rm.json();
+  _weekly = w; _monthly = m;
   $w.textContent=''; for(const r of w){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.week}</td><td>${fmt(r.start)}</td><td>${fmt(r.end)}</td><td>${r.total}</td><td>${(r.avg||0).toFixed(2)}</td><td>${r.completed}</td><td>${(r.targetAvg||0).toFixed(2)}</td><td>${(r.fastest||0).toFixed(2)}</td><td>${(r.longest||0).toFixed(2)}</td><td>${(r.pctWithin||0).toFixed(0)}%</td>`; $w.appendChild(tr); }
   $m.textContent=''; for(const r of m){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.month}</td><td>${(r.targetAvg||0).toFixed(2)}</td><td>${(r.actualAvg||0).toFixed(2)}</td><td>${((r.actualAvg||0)-(r.targetAvg||0)).toFixed(2)}</td><td>${r.completed}</td>`; $m.appendChild(tr); }
+};
+
+function toCSV(headers, rows){
+  const csv=[headers.join(',')];
+  for(const r of rows){
+    csv.push(headers.map(h=>{
+      let v = (r[h]!==undefined && r[h]!==null) ? String(r[h]) : '';
+      return '"' + v.replace(/"/g,'""') + '"';
+    }).join(','));
+  }
+  const blob=new Blob([csv.join('\n')],{type:'text/csv'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='export.csv'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+
+document.getElementById('expW').onclick=()=>{
+  if(!_weekly.length){ alert('Generate a report first.'); return; }
+  const rows = _weekly.map(r=>({
+    week:r.week,
+    start:new Date(r.start).toISOString(),
+    end:new Date(r.end).toISOString(),
+    total:r.total??'',
+    avg:(r.avg??'').toString(),
+    completed:r.completed??'',
+    targetAvg:(r.targetAvg??'').toString(),
+    fastest:(r.fastest??'').toString(),
+    longest:(r.longest??'').toString(),
+    pctWithin:(r.pctWithin??'').toString()
+  }));
+  toCSV(['week','start','end','total','avg','completed','targetAvg','fastest','longest','pctWithin'], rows);
+};
+
+document.getElementById('expM').onclick=()=>{
+  if(!_monthly.length){ alert('Generate a report first.'); return; }
+  const rows = _monthly.map(r=>({
+    month:r.month,
+    targetAvg:(r.targetAvg??'').toString(),
+    actualAvg:(r.actualAvg??'').toString(),
+    variance:(((r.actualAvg||0)-(r.targetAvg||0))).toString(),
+    completed:r.completed??''
+  }));
+  toCSV(['month','targetAvg','actualAvg','variance','completed'], rows);
+};
+
+document.getElementById('expT').onclick=async()=>{
+  try{
+    const p=new URLSearchParams();
+    if(from.value) p.set('from', from.value);
+    if(to.value) p.set('to', to.value);
+    p.set('limit','1000');
+    const r=await fetch('/api/ticket?'+p.toString());
+    if(!r.ok) return alert(await r.text());
+    const rows=await r.json();
+    if(!rows.length) return alert('No tickets in this range.');
+    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','createdAt'];
+    const norm = rows.map(t=>{ const o={}; headers.forEach(h=>o[h]=t[h]??''); return o; });
+    toCSV(headers, norm);
+  }catch(e){ alert(String(e)); }
 };
 </script>
 </body></html>
