@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Registrar — Log Incoming / Outgoing (Fixed)</title>
+<title>Registrar — Log Incoming / Outgoing</title>
 <style>
   :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
   *{box-sizing:border-box}body{margin:0;font:15px/1.48 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
@@ -64,47 +64,26 @@
 </div>
 
 <script>
-// Surface JS errors to help diagnose
-window.addEventListener('error', e => { const m=document.getElementById('msg'); if(m){ m.textContent = 'Script error: ' + e.message; } });
-
 async function readErr(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j)}catch{}}try{return (await r.text()).slice(0,400)}catch{return r.statusText}}
+async function postTicket(doc){ const r=await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)}); if(!r.ok) throw new Error(await readErr(r)); return r.json(); }
 
-async function postTicket(doc){
-  const r=await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)});
-  if(!r.ok){ throw new Error(await readErr(r)); }
-  return r.json();
-}
+document.getElementById('form').addEventListener('submit', async (e)=>{ e.preventDefault();
+  const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
+    dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
+    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(), status: 'Received' };
+  const out=await postTicket(doc); msg.textContent='Saved ticket '+(out.ref||out._id); e.target.reset(); });
 
-document.getElementById('form').addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  try{
-    const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
-      dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
-      targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(), status: 'Received' };
-    const out=await postTicket(doc);
-    msg.textContent='Saved ticket '+(out.ref||out._id);
-    e.target.reset();
-  }catch(err){ msg.textContent='Save failed: '+err.message; }
-});
-
-document.getElementById('saveOutgoing').onclick=async()=>{
-  if(!sname.value||!rtype.value||!dr.value){ alert('Fill Student Name, Type, and Date Received'); return; }
-  try{
-    const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
-      dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
-      targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
-      dateRelease: new Date().toISOString(), status: 'Released' };
-    const out=await postTicket(doc);
-    msg.textContent='Saved outgoing ticket '+(out.ref||out._id);
-    form.reset();
-  }catch(err){ msg.textContent='Save failed: '+err.message; }
-};
+document.getElementById('saveOutgoing').onclick=async()=>{ if(!sname.value||!rtype.value||!dr.value){ alert('Fill Student Name, Type, and Date Received'); return; }
+  const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
+    dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
+    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
+    dateRelease: new Date().toISOString(), status: 'Released' };
+  const out=await postTicket(doc); msg.textContent='Saved outgoing ticket '+(out.ref||out._id); form.reset(); };
 
 document.getElementById('exportBtn').onclick=async()=>{
-  try{
-    const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await readErr(r));
+  try{const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await readErr(r));
     const rows=await r.json(); if(!rows.length) return alert('No data to export.');
-    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','createdAt'];
+    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','timeliness','createdAt'];
     const csv=[headers.join(',')];
     for(const t of rows){csv.push(headers.map(h=>`"${(t[h]??'').toString().replace(/"/g,'""')}"`).join(','));}
     const blob=new Blob([csv.join('\n')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');
@@ -112,17 +91,15 @@ document.getElementById('exportBtn').onclick=async()=>{
   }catch(e){alert(String(e));}
 };
 
-// ---- CSV Import helpers (FIXED: use '\n' and '\r' not literal newlines) ----
+// ---- CSV Import helpers with BULK upload ----
 function parseCSV(text){
   const rows=[]; let i=0, field='', row=[], inQuotes=false;
   function pushField(){ row.push(field); field=''; }
   while(i<text.length){
     const c=text[i];
     if(inQuotes){
-      if(c==='"'){
-        if(text[i+1]==='"'){ field+='"'; i+=2; continue; }
-        inQuotes=false; i++; continue;
-      } else { field+=c; i++; continue; }
+      if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i+=2; continue; } inQuotes=false; i++; continue; }
+      field+=c; i++; continue;
     } else {
       if(c==='"'){ inQuotes=true; i++; continue; }
       if(c===','){ pushField(); i++; continue; }
@@ -185,8 +162,13 @@ document.getElementById('parseCsv').onclick=async()=>{
       status: cell(row, map.status),
       dateRelease: toISOorNull(cell(row, map.dateRelease)),
     };
-    if(!doc.status){ doc.status = doc.dateRelease ? 'Released' : 'Received'; }
-    docs.push(doc);
+    if(!doc.studentName || !doc.requestType){
+      // skip invalid row
+    } else {
+      if(!doc.status){ doc.status = doc.dateRelease ? 'Released' : 'Received'; }
+      if(!doc.dateReceived){ doc.dateReceived = new Date().toISOString(); }
+      docs.push(doc);
+    }
   }
   _csvDocs = docs;
   const preview = docs.slice(0,5).map(d=>JSON.stringify(d,null,2)).join('\n---\n');
@@ -194,23 +176,26 @@ document.getElementById('parseCsv').onclick=async()=>{
   document.getElementById('csvSummary').textContent = `Parsed ${docs.length} row(s). Only the first 5 are shown below.`;
 };
 
+async function bulkInsert(docs, chunkSize=100){
+  let ok=0, fail=0, errs=[];
+  for(let i=0;i<docs.length;i+=chunkSize){
+    const chunk = docs.slice(i, i+chunkSize);
+    try{
+      const r = await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(chunk)});
+      if(!r.ok){ fail += chunk.length; errs.push(await r.text()); }
+      else { const j = await r.json(); ok += (j.insertedCount || chunk.length); }
+      document.getElementById('csvSummary').textContent = `Imported ${ok} / ${docs.length}...`;
+    }catch(e){ fail += chunk.length; errs.push(String(e)); }
+  }
+  return { ok, fail, errs };
+}
+
 document.getElementById('importCsv').onclick=async()=>{
   if(!_csvDocs.length) return alert('Nothing to import. Click Preview first.');
   if(!confirm('Import '+_csvDocs.length+' rows?')) return;
-  let ok=0, fail=0, errs=[];
-  for(const doc of _csvDocs){
-    const payload = { ...doc };
-    if(!payload.studentName || !payload.requestType){
-      fail++; errs.push('Missing required fields: '+JSON.stringify(doc)); continue;
-    }
-    if(!payload.dateReceived) payload.dateReceived = new Date().toISOString();
-    try{
-      const r = await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-      if(!r.ok){ fail++; errs.push(await readErr(r)); } else { ok++; }
-    }catch(e){ fail++; errs.push(String(e)); }
-  }
+  const { ok, fail, errs } = await bulkInsert(_csvDocs, 100);
   document.getElementById('csvSummary').textContent = `Imported ${ok} / ${_csvDocs.length}. Errors: ${fail}`;
-  if(errs.length){ document.getElementById('csvPreview').textContent = errs.slice(0,20).join('\n'); }
+  if(errs.length){ document.getElementById('csvPreview').textContent = errs.slice(0,10).join('\n'); }
 };
 </script>
 </body>
