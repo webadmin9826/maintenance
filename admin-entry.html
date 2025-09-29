@@ -46,32 +46,36 @@
         <button class="primary" type="submit">Save as Incoming</button>
         <button class="ghost" type="button" id="saveOutgoing">Save as Outgoing (Released Now)</button>
         <a class="ghost" href="/admin-update.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Go to Update</a>
+        <a class="ghost" href="/admin-reports.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Reports</a>
+        <button class="ghost" type="button" id="exportBtn">Export (Excel)</button>
       </div>
       <div id="msg" class="muted" style="margin-top:10px"></div>
     </form>
   </div>
 </div>
 <script>
-async function postTicket(doc){
-  const r=await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)});
-  if(!r.ok) throw new Error(await r.text()); return r.json();
-}
-document.getElementById('form').addEventListener('submit', async (e)=>{
-  e.preventDefault();
+async function postTicket(doc){ const r=await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+document.getElementById('form').addEventListener('submit', async (e)=>{ e.preventDefault();
   const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
     dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
-    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
-    status: 'Received' };
-  const out=await postTicket(doc); msg.textContent='Saved ticket '+(out.ref||out._id);
-  e.target.reset();
-});
-document.getElementById('saveOutgoing').onclick=async()=>{
-  if(!sname.value||!rtype.value||!dr.value){ alert('Fill Student Name, Type, and Date Received'); return; }
+    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(), status: 'Received' };
+  const out=await postTicket(doc); msg.textContent='Saved ticket '+(out.ref||out._id); e.target.reset(); });
+document.getElementById('saveOutgoing').onclick=async()=>{ if(!sname.value||!rtype.value||!dr.value){ alert('Fill Student Name, Type, and Date Received'); return; }
   const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
     dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
     targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
     dateRelease: new Date().toISOString(), status: 'Released' };
-  const out=await postTicket(doc); msg.textContent='Saved outgoing ticket '+(out.ref||out._id); form.reset();
+  const out=await postTicket(doc); msg.textContent='Saved outgoing ticket '+(out.ref||out._id); form.reset(); };
+
+document.getElementById('exportBtn').onclick=async()=>{
+  try{const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await r.text());
+    const rows=await r.json(); if(!rows.length) return alert('No data to export.');
+    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','createdAt'];
+    const csv=[headers.join(',')];
+    for(const t of rows){csv.push(headers.map(h=>`"${(t[h]??'').toString().replace(/"/g,'""')}"`).join(','));}
+    const blob=new Blob([csv.join('\n')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download='tickets-entry-export.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){alert(String(e));}
 };
 </script>
 </body></html>
