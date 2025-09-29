@@ -35,37 +35,49 @@
 </div>
 
 <script>
-/* --- Simple front-end credential check (no config changes) ---
+/* --- Simple front-end credential check (no server changes) ---
    Replace the sample users/passwords below with your own.
-   For stronger security later, move this to a server function + httpOnly cookie. */
+   For production, move auth to a server and use httpOnly cookies. */
 
 const CREDENTIALS = {
-  "admin": "Passw0rd!",
-  "maintenance": "Maint2024!"
+  // username: { password, role, redirect }
+  "admin":       { password: "Passw0rd!",  role: "admin",     redirect: "/admin.html" },
+  "maintenance": { password: "Maint2024!", role: "facility",  redirect: "/admin-classroom-panel.html" }
 };
-function saveSession(username, hours=8){
+
+function saveSession(username, role, hours=8){
   const exp = Date.now() + hours*60*60*1000;
-  localStorage.setItem("adminAuth", JSON.stringify({ user: username, exp, at: new Date().toISOString() }));
+  localStorage.setItem("adminAuth", JSON.stringify({
+    user: username,
+    role: role,
+    exp,
+    at: new Date().toISOString()
+  }));
 }
 
 document.getElementById('f').addEventListener('submit',(e)=>{
   e.preventDefault();
-  const u = document.getElementById('uid').value.trim();
+  const uRaw = document.getElementById('uid').value.trim();
+  const u = uRaw.toLowerCase(); // case-insensitive usernames
   const p = document.getElementById('pw').value;
-  const err = document.getElementById('err'); err.style.display='none';
+  const err = document.getElementById('err'); 
+  err.style.display='none';
 
-  if (!CREDENTIALS[u] || CREDENTIALS[u] !== p){
+  const acct = CREDENTIALS[u];
+  if (!acct || acct.password !== p){
     err.textContent = "Invalid username or password.";
     err.style.display = 'block';
     return;
   }
-  saveSession(u);
+
+  // Save session with role, then redirect based on the account used.
+  saveSession(uRaw, acct.role);
+
+  // Optional: keep supporting ?type=... if you were using it before
   const type = new URLSearchParams(location.search).get('type') || '';
-  const next = `/admin.html${type ? ('?type=' + encodeURIComponent(type)) : ''}`;
-  location.replace(next);
+  const dest = acct.redirect + (type ? ('?type=' + encodeURIComponent(type)) : '');
+  location.replace(dest);
 });
 </script>
 </body>
 </html>
-
-
