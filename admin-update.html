@@ -11,18 +11,19 @@
   h1{margin:0 0 10px}.muted{color:var(--muted)}
   label{display:block;margin:10px 0 6px}
   input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1324;color:var(--ink)}
-  textarea{min-height:120px;resize:vertical}
-  .row{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
   button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
-  .primary{background:var(--accent);color:#031}
   .ghost{background:#1f2937;color:#e5e7eb}
   .danger{background:var(--danger);color:#ffe4e6}
+  .accent{background:var(--accent);color:#031}
   table{width:100%;border-collapse:separate;border-spacing:0 8px}
   th,td{padding:10px 12px;text-align:left;vertical-align:top}
   thead th{color:#cbd5e1}
   tbody tr{background:var(--card);border:1px solid var(--line)}
   .chip{display:inline-block;padding:4px 8px;border-radius:999px;background:#0b172e;border:1px solid #24324a;color:#cbd5e1;font-size:12px}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:12px}
+  .pager .left, .pager .right{display:flex;gap:8px;align-items:center}
+  .pager button[disabled]{opacity:.5;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -35,7 +36,15 @@
       <select id="fs"><option value="">All</option><option>Received</option><option>Released</option></select>
       <button class="ghost" id="refresh">Refresh</button>
       <a class="ghost" href="/admin-reports.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Reports</a>
-      <button class="ghost" type="button" id="exportBtn">Export (Excel)</button>
+      <button class="ghost" type="button" id="exportBtn">Export (CSV)</button>
+      <span class="muted" style="margin-left:auto">Rows per page:</span>
+      <select id="pageSize">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="75">75</option>
+        <option value="100">100</option>
+      </select>
     </div>
     <table>
       <thead><tr>
@@ -44,52 +53,115 @@
         <th style="width:150px">Request Type</th>
         <th style="width:120px">Target (days)</th>
         <th>Remarks</th>
+        <th style="width:140px">Timeliness</th>
         <th style="width:210px">Actions</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
+    <div class="pager">
+      <div class="left">
+        <button class="ghost" id="prevBtn">Prev</button>
+        <button class="ghost" id="nextBtn">Next</button>
+      </div>
+      <div class="right muted" id="pageInfo">Page 1 of 1 • Showing 0–0 of 0</div>
+    </div>
   </div>
 </div>
 <script>
 const $rows=document.getElementById('rows'), $q=document.getElementById('q'), $fs=document.getElementById('fs');
+const $pageSize=document.getElementById('pageSize'), $prev=document.getElementById('prevBtn'), $next=document.getElementById('nextBtn'), $info=document.getElementById('pageInfo');
+let _list=[], _page=1, _perPage=10;
+
 function fmt(iso){return iso? new Date(iso).toLocaleString():''}
+function daysInt(a,b){ const ms=new Date(a)-new Date(b); return Math.max(0, Math.floor(ms/86400000)); }
+function label(t){ if(!t.dateRelease||!t.dateReceived) return ''; const d=daysInt(t.dateRelease,t.dateReceived); if(typeof t.targetDays==='number'){ return d<=t.targetDays ? 'On time' : `Delayed (${d - t.targetDays} days)`; } return d===0?'On time':`Delayed (${d} days)`; }
 async function readErr(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j)}catch{}}try{return (await r.text()).slice(0,400)}catch{return r.statusText}}
+
 async function fetchList(){
   const p=new URLSearchParams(); if($q.value.trim())p.set('q',$q.value.trim()); if($fs.value)p.set('status',$fs.value);
+  // Ask for up to 1000; paging is done client-side
+  p.set('limit','1000');
   const r=await fetch('/api/ticket?'+p.toString()); if(!r.ok) throw new Error(await readErr(r)); return r.json();
 }
+
+function renderTable(){
+  // bounds
+  _perPage = parseInt($pageSize.value, 10) || 10;
+  const total = _list.length;
+  const totalPages = Math.max(1, Math.ceil(total / _perPage));
+  if(_page > totalPages) _page = totalPages;
+  if(_page < 1) _page = 1;
+  const start = (_page - 1) * _perPage;
+  const end = Math.min(start + _perPage, total);
+  const pageRows = _list.slice(start, end);
+
+  $rows.textContent='';
+  if(!pageRows.length){
+    const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=7; td.textContent='No records.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr);
+  } else {
+    for(const t of pageRows){
+      const tr=document.createElement('tr');
+      const td0=document.createElement('td'); td0.innerHTML=`<div><strong>${t.ref||t._id}</strong></div>
+        <div class="muted">Received: ${fmt(t.dateReceived)}</div>
+        <div class="muted">Released: ${t.dateRelease?fmt(t.dateRelease):'—'}</div>`;
+      const td1=document.createElement('td'); td1.textContent=(t.studentName||'')+(t.studentId? ' ('+t.studentId+')':'');
+      const td2=document.createElement('td'); td2.textContent=t.requestType||'';
+      const td3=document.createElement('td'); td3.textContent=t.targetDays??'';
+      const td4=document.createElement('td'); td4.textContent=t.remarks||'';
+      const td5=document.createElement('td'); td5.textContent = t.timeliness || label(t);
+      const td6=document.createElement('td');
+      const b1=document.createElement('button'); b1.className='ghost'; b1.textContent=t.status==='Received'?'Mark Released':'Mark Received';
+      b1.onclick=async()=>{ const ns=t.status==='Received'?'Released':'Received'; const set={status:ns}; if(ns==='Released') set.dateRelease=new Date().toISOString(); else set.dateRelease=null; await patch(t._id,set); await fetchAndRender(false); };
+      const b2=document.createElement('button'); b2.className='danger'; b2.textContent='Delete'; b2.style.marginLeft='6px'; b2.onclick=async()=>{ if(!confirm('Delete ticket?'))return; await del(t._id); await fetchAndRender(false); };
+      const b3=document.createElement('button'); b3.className='ghost'; b3.textContent='Edit Target'; b3.style.marginLeft='6px'; b3.onclick=async()=>{ const v=prompt('Target days', t.targetDays??''); if(v===null) return; await patch(t._id,{targetDays: Number(v)||null}); await fetchAndRender(false); };
+      td6.append(b1,b3,b2);
+      tr.append(td0,td1,td2,td3,td4,td5,td6); $rows.appendChild(tr);
+    }
+  }
+
+  // pager state
+  $prev.disabled = (_page<=1);
+  $next.disabled = (_page>=totalPages);
+  const showStart = total? (start+1) : 0;
+  const showEnd = end;
+  $info.textContent = `Page ${_page} of ${totalPages} • Showing ${showStart}–${showEnd} of ${total}`;
+}
+
 async function patch(id, body){const r=await fetch('/api/ticket/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok) throw new Error(await readErr(r)); return r.json();}
 async function del(id){const r=await fetch('/api/ticket/'+id,{method:'DELETE'}); if(!r.ok) throw new Error(await readErr(r)); return r.json();}
-async function render(){
-  const list=await fetchList(); $rows.textContent='';
-  if(!list.length){const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=6; td.textContent='No records.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr); return;}
-  for(const t of list){
-    const tr=document.createElement('tr');
-    const td0=document.createElement('td'); td0.innerHTML=`<div><strong>${t.ref||t._id}</strong></div>
-      <div class="muted">Received: ${fmt(t.dateReceived)}</div>
-      <div class="muted">Released: ${t.dateRelease?fmt(t.dateRelease):'—'}</div>`;
-    const td1=document.createElement('td'); td1.textContent=(t.studentName||'')+(t.studentId? ' ('+t.studentId+')':'');
-    const td2=document.createElement('td'); td2.textContent=t.requestType||'';
-    const td3=document.createElement('td'); td3.textContent=t.targetDays??'';
-    const td4=document.createElement('td'); td4.textContent=t.remarks||'';
-    const td5=document.createElement('td');
-    const b1=document.createElement('button'); b1.className='ghost'; b1.textContent=t.status==='Received'?'Mark Released':'Mark Received';
-    b1.onclick=async()=>{ const ns=t.status==='Received'?'Released':'Received'; const set={status:ns}; if(ns==='Released') set.dateRelease=new Date().toISOString(); else set.dateRelease=null; await patch(t._id,set); render(); };
-    const b2=document.createElement('button'); b2.className='danger'; b2.textContent='Delete'; b2.style.marginLeft='6px'; b2.onclick=async()=>{ if(!confirm('Delete ticket?'))return; await del(t._id); render(); };
-    const b3=document.createElement('button'); b3.className='ghost'; b3.textContent='Edit Target'; b3.style.marginLeft='6px'; b3.onclick=async()=>{ const v=prompt('Target days', t.targetDays??''); if(v===null) return; await patch(t._id,{targetDays: Number(v)||null}); render(); };
-    td5.append(b1,b3,b2); tr.append(td0,td1,td2,td3,td4,td5); $rows.appendChild(tr);
-  }
+
+async function fetchAndRender(resetPage=true){
+  _list = await fetchList();
+  if(resetPage) _page = 1;
+  renderTable();
 }
-document.getElementById('refresh').onclick=render; $q.oninput=()=>{clearTimeout(window._t); window._t=setTimeout(render,300);}
-$fs.onchange=render; render();
+
+// events
+document.getElementById('refresh').onclick=()=>fetchAndRender(true);
+$q.oninput=()=>{clearTimeout(window._t); window._t=setTimeout(()=>fetchAndRender(true),300);}
+$fs.onchange=()=>fetchAndRender(true);
+$pageSize.onchange=()=>{ _page = 1; renderTable(); };
+$prev.onclick=()=>{ if(_page>1){ _page--; renderTable(); } };
+$next.onclick=()=>{ const totalPages = Math.max(1, Math.ceil(_list.length / (parseInt($pageSize.value,10)||10))); if(_page<totalPages){ _page++; renderTable(); } };
+
+// initial
+fetchAndRender(true);
 
 document.getElementById('exportBtn').onclick=async()=>{
-  try{const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await r.text());
-    const rows=await r.json(); if(!rows.length) return alert('No data to export.');
-    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','createdAt'];
+  try{
+    const p=new URLSearchParams();
+    if($q.value.trim()) p.set('q',$q.value.trim());
+    if($fs.value) p.set('status',$fs.value);
+    p.set('limit','1000');
+    const r=await fetch('/api/ticket?'+p.toString());
+    if(!r.ok) return alert(await readErr(r));
+    const rows=await r.json();
+    if(!rows.length) return alert('No data to export.');
+    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','timeliness','createdAt'];
     const csv=[headers.join(',')];
     for(const t of rows){csv.push(headers.map(h=>`"${(t[h]??'').toString().replace(/"/g,'""')}"`).join(','));}
-    const blob=new Blob([csv.join('\n')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    const blob=new Blob([csv.join('\n')],{type:'text/csv'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a');
     a.href=url; a.download='tickets-update-export.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
   }catch(e){alert(String(e));}
 };
