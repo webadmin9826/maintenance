@@ -36,6 +36,7 @@
         <button class="primary" type="submit">Sign In</button>
         <a class="ghost" href="/student-track.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Student Tracking</a>
       </div>
+      <button class="ghost" type="button" id="exportBtn" style="margin-top:10px">Export All Tickets (Excel)</button>
       <div id="err" class="muted" style="color:#fecaca;margin-top:10px"></div>
     </form>
   </div>
@@ -49,5 +50,16 @@ document.getElementById('f').addEventListener('submit', async (e)=>{
   if(!r.ok){ document.getElementById('err').textContent=(await r.text()); return; }
   saveSession(); location.href='/admin-entry.html';
 });
+async function exportTicketsCSV(filename='tickets-export.csv'){
+  try{const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await r.text());
+    const rows=await r.json(); if(!rows.length) return alert('No data to export.');
+    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','createdAt'];
+    const csv=[headers.join(',')];
+    for(const t of rows){csv.push(headers.map(h=>`"${(t[h]??'').toString().replace(/"/g,'""')}"`).join(','));}
+    const blob=new Blob([csv.join('\n')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){alert(String(e));}
+}
+document.getElementById('exportBtn').onclick=()=>exportTicketsCSV('tickets-export.csv');
 </script>
 </body></html>
