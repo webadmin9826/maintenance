@@ -39,6 +39,8 @@
         <th style="width:180px">Ticket / Dates</th>
         <th style="width:160px">Student</th>
         <th style="width:160px">Request Type</th>
+        <th style="width:160px">Actual Release</th>
+        <th style="width:140px">Staff In‑Charge</th>
         <th>Remarks</th>
         <th style="width:140px">Status</th>
       </tr></thead>
@@ -54,17 +56,19 @@ async function search(){
   const r = await fetch('/api/ticket?q='+encodeURIComponent($q.value.trim()));
   if(!r.ok) return alert(await readErr(r));
   const list = await r.json(); $rows.textContent='';
-  if(!list.length) { const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=5; td.textContent='No records found.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr); return; }
+  if(!list.length) { const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=7; td.textContent='No records found.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr); return; }
   for(const t of list){
     const tr=document.createElement('tr');
-    const td0=document.createElement('td'); td0.innerHTML='<div><strong>'+ (t.ref||t._id) +'</strong></div>'+
-      '<div class="muted">Received: '+fmt(t.dateReceived)+'</div>'+
-      '<div class="muted">Released: '+(t.dateRelease?fmt(t.dateRelease):'—')+'</div>';
+    const td0=document.createElement('td'); td0.innerHTML=`<div><strong>${t.ref||t._id}</strong></div>
+      <div class="muted">Received: ${fmt(t.dateReceived)}</div>
+      <div class="muted">Released: ${t.dateRelease?fmt(t.dateRelease):'—'}</div>`;
     const td1=document.createElement('td'); td1.textContent=(t.studentName||'') + (t.studentId? ' ('+t.studentId+')':'');
     const td2=document.createElement('td'); td2.textContent=t.requestType||'';
-    const td3=document.createElement('td'); td3.textContent=t.remarks||'';
-    const td4=document.createElement('td'); const s=document.createElement('span'); s.className='chip'; s.textContent=t.status||'Received'; td4.appendChild(s);
-    tr.append(td0,td1,td2,td3,td4); $rows.appendChild(tr);
+    const td3=document.createElement('td'); td3.textContent = t.dateRelease ? fmt(t.dateRelease) : '—';
+    const td4=document.createElement('td'); td4.textContent = t.staff || '';
+    const td5=document.createElement('td'); td5.textContent=t.remarks||'';
+    const td6=document.createElement('td'); const s=document.createElement('span'); s.className='chip'; s.textContent=t.status||'Received'; td6.appendChild(s);
+    tr.append(td0,td1,td2,td3,td4,td5,td6); $rows.appendChild(tr);
   }
 }
 document.getElementById('searchBtn').onclick=search;
