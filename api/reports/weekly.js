@@ -1,6 +1,7 @@
 const clientPromise = require('../../lib/mongo');
 
-function weekStart(d){ const dt = new Date(d); const day = dt.getDay(); const diff = dt.getDate() - day + (day===0?-6:1); const s = new Date(dt.setDate(diff)); s.setHours(0,0,0,0); return s; }
+function weekStart(d){ const dt = new Date(d); const day = dt.getDay(); const diff = dt.getDate() - day + (day===0?-6:1);
+  const s = new Date(dt.setDate(diff)); s.setHours(0,0,0,0); return s; }
 function weekEnd(s){ const e = new Date(s); e.setDate(e.getDate()+6); e.setHours(23,59,59,999); return e; }
 
 module.exports = async (req, res) => {
