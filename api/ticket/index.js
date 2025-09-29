@@ -16,6 +16,35 @@ module.exports = async (req, res) => {
       return res.status(201).end(JSON.stringify({ _id: String(r.insertedId), ref: doc.ref || null }));
     }
 
+     // ---- Bulk insert ----
+      if (Array.isArray(payload)) {
+        if (!payload.length) return res.status(400).end(JSON.stringify({ error: 'Empty array' }));
+        // Prepare docs
+        const docs = payload.map(d => {
+          const doc = { ...d, createdAt: new Date().toISOString() };
+          const calc = computeProcessingAndTimeliness(doc);
+          doc.processingDays = calc.processingDays;
+          doc.timeliness = calc.timeliness;
+          return doc;
+        });
+        const r = await Tickets.insertMany(docs, { ordered: false });
+        return res.status(201).end(JSON.stringify({ ok: true, insertedCount: r.insertedCount }));
+      }
+
+      // ---- Single insert ----
+      const doc = payload;
+      if (!doc.studentName || !doc.requestType || !doc.dateReceived) {
+        return res.status(400).end(JSON.stringify({error:'Missing fields'}));
+      }
+      doc.createdAt = new Date().toISOString();
+      const calc = computeProcessingAndTimeliness(doc);
+      doc.processingDays = calc.processingDays;
+      doc.timeliness = calc.timeliness;
+      const r = await Tickets.insertOne(doc);
+      return res.status(201).end(JSON.stringify({ _id: String(r.insertedId), ref: doc.ref || null }));
+    }
+
+
     if (req.method === 'GET') {
       const { q, status, from, to, limit } = req.query || {};
       const filter = {};
