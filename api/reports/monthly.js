@@ -17,7 +17,7 @@ module.exports = async (req, res) => {
     }
 
     const rows = await Tickets.find(filter).toArray();
-    const groups = new Map();
+    const groups = new Map(); // key YYYY-MM
     for (const r of rows) {
       const d = new Date(r.dateReceived || r.createdAt || new Date());
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
