@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Registrar — Log Incoming / Outgoing</title>
+<title>Registrar — Log Incoming / Outgoing (Fixed)</title>
 <style>
   :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
   *{box-sizing:border-box}body{margin:0;font:15px/1.48 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
@@ -64,21 +64,45 @@
 </div>
 
 <script>
-async function postTicket(doc){ const r=await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-document.getElementById('form').addEventListener('submit', async (e)=>{ e.preventDefault();
-  const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
-    dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
-    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(), status: 'Received' };
-  const out=await postTicket(doc); msg.textContent='Saved ticket '+(out.ref||out._id); e.target.reset(); });
-document.getElementById('saveOutgoing').onclick=async()=>{ if(!sname.value||!rtype.value||!dr.value){ alert('Fill Student Name, Type, and Date Received'); return; }
-  const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
-    dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
-    targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
-    dateRelease: new Date().toISOString(), status: 'Released' };
-  const out=await postTicket(doc); msg.textContent='Saved outgoing ticket '+(out.ref||out._id); form.reset(); };
+// Surface JS errors to help diagnose
+window.addEventListener('error', e => { const m=document.getElementById('msg'); if(m){ m.textContent = 'Script error: ' + e.message; } });
+
+async function readErr(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j)}catch{}}try{return (await r.text()).slice(0,400)}catch{return r.statusText}}
+
+async function postTicket(doc){
+  const r=await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)});
+  if(!r.ok){ throw new Error(await readErr(r)); }
+  return r.json();
+}
+
+document.getElementById('form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  try{
+    const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
+      dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
+      targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(), status: 'Received' };
+    const out=await postTicket(doc);
+    msg.textContent='Saved ticket '+(out.ref||out._id);
+    e.target.reset();
+  }catch(err){ msg.textContent='Save failed: '+err.message; }
+});
+
+document.getElementById('saveOutgoing').onclick=async()=>{
+  if(!sname.value||!rtype.value||!dr.value){ alert('Fill Student Name, Type, and Date Received'); return; }
+  try{
+    const doc={ studentId: sid.value.trim(), studentName: sname.value.trim(), requestType: rtype.value.trim(),
+      dateReceived: new Date(dr.value).toISOString(), scheduleRelease: sched.value? new Date(sched.value).toISOString(): null,
+      targetDays: target.value? Number(target.value): null, remarks: remarks.value.trim(), staff: staff.value.trim(),
+      dateRelease: new Date().toISOString(), status: 'Released' };
+    const out=await postTicket(doc);
+    msg.textContent='Saved outgoing ticket '+(out.ref||out._id);
+    form.reset();
+  }catch(err){ msg.textContent='Save failed: '+err.message; }
+};
 
 document.getElementById('exportBtn').onclick=async()=>{
-  try{const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await r.text());
+  try{
+    const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await readErr(r));
     const rows=await r.json(); if(!rows.length) return alert('No data to export.');
     const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','createdAt'];
     const csv=[headers.join(',')];
@@ -88,7 +112,7 @@ document.getElementById('exportBtn').onclick=async()=>{
   }catch(e){alert(String(e));}
 };
 
-// ---- CSV Import helpers ----
+// ---- CSV Import helpers (FIXED: use '\n' and '\r' not literal newlines) ----
 function parseCSV(text){
   const rows=[]; let i=0, field='', row=[], inQuotes=false;
   function pushField(){ row.push(field); field=''; }
@@ -102,10 +126,8 @@ function parseCSV(text){
     } else {
       if(c==='"'){ inQuotes=true; i++; continue; }
       if(c===','){ pushField(); i++; continue; }
-      if(c==='
-'){ pushField(); rows.push(row); row=[]; i++; continue; }
-      if(c==='
-'){ i++; continue; }
+      if(c==='\n'){ pushField(); rows.push(row); row=[]; i++; continue; }
+      if(c==='\r'){ i++; continue; }
       field+=c; i++;
     }
   }
@@ -184,7 +206,7 @@ document.getElementById('importCsv').onclick=async()=>{
     if(!payload.dateReceived) payload.dateReceived = new Date().toISOString();
     try{
       const r = await fetch('/api/ticket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-      if(!r.ok){ fail++; errs.push(await r.text()); } else { ok++; }
+      if(!r.ok){ fail++; errs.push(await readErr(r)); } else { ok++; }
     }catch(e){ fail++; errs.push(String(e)); }
   }
   document.getElementById('csvSummary').textContent = `Imported ${ok} / ${_csvDocs.length}. Errors: ${fail}`;
