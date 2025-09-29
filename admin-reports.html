@@ -55,8 +55,8 @@ document.getElementById('go').onclick=async()=>{
   const p=new URLSearchParams(); if(from.value) p.set('from', from.value); if(to.value) p.set('to', to.value);
   const rw=await fetch('/api/reports/weekly?'+p.toString()); if(!rw.ok) return alert(await readErr(rw)); const w=await rw.json();
   const rm=await fetch('/api/reports/monthly?'+p.toString()); if(!rm.ok) return alert(await readErr(rm)); const m=await rm.json();
-  $w.textContent=''; for(const r of w){ const tr=document.createElement('tr'); tr.innerHTML='<td>'+r.week+'</td><td>'+fmt(r.start)+'</td><td>'+fmt(r.end)+'</td><td>'+r.total+'</td><td>'+((r.avg||0).toFixed(2))+'</td><td>'+r.completed+'</td><td>'+((r.targetAvg||0).toFixed(2))+'</td><td>'+((r.fastest||0).toFixed(2))+'</td><td>'+((r.longest||0).toFixed(2))+'</td><td>'+((r.pctWithin||0).toFixed(0))+'%</td>'; $w.appendChild(tr); }
-  $m.textContent=''; for(const r of m){ const tr=document.createElement('tr'); tr.innerHTML='<td>'+r.month+'</td><td>'+((r.targetAvg||0).toFixed(2))+'</td><td>'+((r.actualAvg||0).toFixed(2))+'</td><td>'+(((r.actualAvg||0)-(r.targetAvg||0)).toFixed(2))+'</td><td>'+r.completed+'</td>'; $m.appendChild(tr); }
+  $w.textContent=''; for(const r of w){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.week}</td><td>${fmt(r.start)}</td><td>${fmt(r.end)}</td><td>${r.total}</td><td>${(r.avg||0).toFixed(2)}</td><td>${r.completed}</td><td>${(r.targetAvg||0).toFixed(2)}</td><td>${(r.fastest||0).toFixed(2)}</td><td>${(r.longest||0).toFixed(2)}</td><td>${(r.pctWithin||0).toFixed(0)}%</td>`; $w.appendChild(tr); }
+  $m.textContent=''; for(const r of m){ const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.month}</td><td>${(r.targetAvg||0).toFixed(2)}</td><td>${(r.actualAvg||0).toFixed(2)}</td><td>${((r.actualAvg||0)-(r.targetAvg||0)).toFixed(2)}</td><td>${r.completed}</td>`; $m.appendChild(tr); }
 };
 </script>
 </body></html>
