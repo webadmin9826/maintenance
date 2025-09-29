@@ -34,6 +34,8 @@
       <input id="q" placeholder="Search by name, ID, request type...">
       <select id="fs"><option value="">All</option><option>Received</option><option>Released</option></select>
       <button class="ghost" id="refresh">Refresh</button>
+      <a class="ghost" href="/admin-reports.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Reports</a>
+      <button class="ghost" type="button" id="exportBtn">Export (Excel)</button>
     </div>
     <table>
       <thead><tr>
@@ -63,12 +65,12 @@ async function render(){
   if(!list.length){const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=6; td.textContent='No records.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr); return;}
   for(const t of list){
     const tr=document.createElement('tr');
-    const td0=document.createElement('td'); td0.innerHTML='<div><strong>'+(t.ref||t._id)+'</strong></div>'+
-      '<div class="muted">Received: '+fmt(t.dateReceived)+'</div>'+
-      '<div class="muted">Released: '+(t.dateRelease?fmt(t.dateRelease):'—')+'</div>';
+    const td0=document.createElement('td'); td0.innerHTML=`<div><strong>${t.ref||t._id}</strong></div>
+      <div class="muted">Received: ${fmt(t.dateReceived)}</div>
+      <div class="muted">Released: ${t.dateRelease?fmt(t.dateRelease):'—'}</div>`;
     const td1=document.createElement('td'); td1.textContent=(t.studentName||'')+(t.studentId? ' ('+t.studentId+')':'');
     const td2=document.createElement('td'); td2.textContent=t.requestType||'';
-    const td3=document.createElement('td'); td3.textContent=(t.targetDays??'');
+    const td3=document.createElement('td'); td3.textContent=t.targetDays??'';
     const td4=document.createElement('td'); td4.textContent=t.remarks||'';
     const td5=document.createElement('td');
     const b1=document.createElement('button'); b1.className='ghost'; b1.textContent=t.status==='Received'?'Mark Released':'Mark Received';
@@ -78,7 +80,18 @@ async function render(){
     td5.append(b1,b3,b2); tr.append(td0,td1,td2,td3,td4,td5); $rows.appendChild(tr);
   }
 }
-document.getElementById('refresh').onclick=render; $q.oninput=()=>{clearTimeout(window._t); window._t=setTimeout(render,300);} 
+document.getElementById('refresh').onclick=render; $q.oninput=()=>{clearTimeout(window._t); window._t=setTimeout(render,300);}
 $fs.onchange=render; render();
+
+document.getElementById('exportBtn').onclick=async()=>{
+  try{const r=await fetch('/api/ticket?limit=1000'); if(!r.ok) return alert(await r.text());
+    const rows=await r.json(); if(!rows.length) return alert('No data to export.');
+    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','remarks','staff','status','createdAt'];
+    const csv=[headers.join(',')];
+    for(const t of rows){csv.push(headers.map(h=>`"${(t[h]??'').toString().replace(/"/g,'""')}"`).join(','));}
+    const blob=new Blob([csv.join('\n')],{type:'text/csv'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download='tickets-update-export.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){alert(String(e));}
+};
 </script>
 </body></html>
