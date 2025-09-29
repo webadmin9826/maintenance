@@ -24,7 +24,7 @@ thead th{color:#cbd5e1}tbody tr{background:var(--card);border:1px solid var(--li
 <script>
 (function(){
   try{const s=localStorage.getItem('adminAuth');if(!s)throw 0;const t=JSON.parse(s);if(!t.exp||Date.now()>t.exp)throw 0;}
-  catch{location.replace('/admin-login.html?next='+encodeURIComponent(location.pathname+location.search));}
+  catch{location.replace('/admin-maintenance.html?next='+encodeURIComponent(location.pathname+location.search));}
 })();
 </script>
   <div class="wrap">
