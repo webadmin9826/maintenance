@@ -1,63 +1,284 @@
-// api/ticket/[id].js
-const { ObjectId } = require('mongodb');
-const clientPromise = require('../../lib/mongo');
-const { computeProcessingAndTimeliness } = require('./_helper');
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Registrar — Update Requests</title>
+<style>
+  :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
+  *{box-sizing:border-box}body{margin:0;font:15px/1.48 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1100px;margin:36px auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+  h1{margin:0 0 10px}.muted{color:var(--muted)}
+  label{display:block;margin:10px 0 6px}
+  input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1324;color:var(--ink)}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .ghost{background:#1f2937;color:#e5e7eb}
+  .danger{background:var(--danger);color:#ffe4e6}
+  .accent{background:var(--accent);color:#031}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;text-align:left;vertical-align:top}
+  thead th{color:#cbd5e1}
+  tbody tr{background:var(--card);border:1px solid var(--line)}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:12px}
+  .pager .left, .pager .right{display:flex;gap:8px;align-items:center}
+  .pager button[disabled]{opacity:.5;cursor:not-allowed}
 
-function json(res, code, obj) {
-  res.statusCode = code;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify(obj));
+  /* Modal */
+  .dlg-wrap{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+  .dlg{width:100%;max-width:520px;background:#0b1324;border:1px solid #1f2937;border-radius:14px;padding:18px}
+  .dlg h3{margin:0 0 8px}
+  .dlg .grid{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+  .dlg .row{margin-top:8px}
+  .dlg .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+  .dlg .ghost{background:#1f2937}
+</style>
+</head>
+<body>
+<script>(function(){ if(localStorage.getItem('regAdmin')!=='1') location.replace('/admin-login.html'); })();</script>
+<div class="wrap">
+  <div class="card">
+    <h1>Update Requests</h1>
+    <div class="toolbar">
+      <input id="q" placeholder="Search by name, ID, request type...">
+      <select id="fs"><option value="">All</option><option>Received</option><option>Processing</option><option>Ready for Claiming</option><option>Released</option></select>
+      <button class="ghost" id="refresh">Refresh</button>
+      <a class="ghost" href="/admin-reports.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Reports</a>
+      <button class="ghost" type="button" id="exportBtn">Export (CSV)</button>
+      <span class="muted" style="margin-left:auto">Rows per page:</span>
+      <select id="pageSize">
+        <option value="10" selected>10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="75">75</option>
+        <option value="100">100</option>
+      </select>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:190px">Ticket / Dates</th>
+        <th style="width:160px">Student</th>
+        <th style="width:150px">Request Type</th>
+        <th style="width:120px">Target (days)</th>
+        <th>Remarks</th>
+        <th style="width:140px">Timeliness</th>
+        <th style="width:260px">Actions</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="pager">
+      <div class="left">
+        <button class="ghost" id="prevBtn">Prev</button>
+        <button class="ghost" id="nextBtn">Next</button>
+      </div>
+      <div class="right muted" id="pageInfo">Page 1 of 1 • Showing 0–0 of 0</div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Details Modal -->
+<div id="dlgWrap" class="dlg-wrap" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+  <form id="dlg" class="dlg">
+    <h3 id="dlgTitle">Edit Details</h3>
+    <div class="grid">
+      <div>
+        <label for="dlgTarget">Target Days</label>
+        <input id="dlgTarget" type="number" min="0" step="1" placeholder="e.g., 3">
+      </div>
+      <div>
+        <label for="dlgStatus">Status</label>
+        <select id="dlgStatus">
+          <option>Received</option>
+          <option>Processing</option>
+          <option>Ready for Claiming</option>
+          <option>Released</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:6px">
+      <div>
+        <label for="dlgOR">OR Number</label>
+        <input id="dlgOR" placeholder="e.g., 2025-001234">
+      </div>
+      <div>
+        <label for="dlgBy">Received By</label>
+        <input id="dlgBy" placeholder="Staff name">
+      </div>
+    </div>
+
+    <div class="row">
+      <label for="dlgIncharge">Date Received (from In-Charge)</label>
+      <input id="dlgIncharge" type="datetime-local">
+    </div>
+
+    <div class="actions">
+      <button type="button" class="ghost" id="dlgCancel">Cancel</button>
+      <button type="submit" class="accent">Save</button>
+    </div>
+  </form>
+</div>
+
+<script>
+const $rows=document.getElementById('rows'), $q=document.getElementById('q'), $fs=document.getElementById('fs');
+const $pageSize=document.getElementById('pageSize'), $prev=document.getElementById('prevBtn'), $next=document.getElementById('nextBtn'), $info=document.getElementById('pageInfo');
+let _list=[], _page=1, _perPage=10;
+
+function fmt(iso){return iso? new Date(iso).toLocaleString():''}
+function daysInt(a,b){ const ms=new Date(a)-new Date(b); return Math.max(0, Math.floor(ms/86400000)); }
+function label(t){ if(!t.dateRelease||!t.dateReceived) return ''; const d=daysInt(t.dateRelease,t.dateReceived); if(typeof t.targetDays==='number'){ return d<=t.targetDays ? 'On time' : `Delayed (${d - t.targetDays} days)`; } return d===0?'On time':`Delayed (${d} days)`; }
+async function readErr(r){const ct=r.headers.get('content-type')||'';if(ct.includes('application/json')){try{const j=await r.json();return j.error||JSON.stringify(j)}catch{}}try{return (await r.text()).slice(0,400)}catch{return r.statusText}}
+
+async function fetchList(){
+  const p=new URLSearchParams(); if($q.value.trim())p.set('q',$q.value.trim()); if($fs.value)p.set('status',$fs.value);
+  const r=await fetch('/api/ticket?'+p.toString()); if(!r.ok) throw new Error(await readErr(r)); return r.json();
 }
 
-module.exports = async (req, res) => {
-  try {
-    const { id } = req.query || {};
-    if (!id || !/^[a-fA-F0-9]{24}$/.test(id)) {
-      return json(res, 400, { error: 'Invalid or missing id' });
+function renderTable(){
+  _perPage = parseInt($pageSize.value, 10) || 10;
+  const total = _list.length;
+  const totalPages = Math.max(1, Math.ceil(total / _perPage));
+  if(_page > totalPages) _page = totalPages;
+  if(_page < 1) _page = 1;
+  const start = (_page - 1) * _perPage;
+  const end = Math.min(start + _perPage, total);
+  const pageRows = _list.slice(start, end);
+
+  $rows.textContent='';
+  if(!pageRows.length){
+    const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=7; td.textContent='No records.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr);
+  } else {
+    for(const t of pageRows){
+      const tr=document.createElement('tr');
+      const td0=document.createElement('td'); td0.innerHTML=`<div><strong>${t.ref||t._id}</strong></div>
+        <div class="muted">Received: ${fmt(t.dateReceived)}</div>
+        <div class="muted">Released: ${t.dateRelease?fmt(t.dateRelease):'—'}</div>`;
+      const td1=document.createElement('td'); td1.textContent=(t.studentName||'')+(t.studentId? ' ('+t.studentId+')':'');
+      const td2=document.createElement('td'); td2.textContent=t.requestType||'';
+      const td3=document.createElement('td'); td3.textContent=t.targetDays??'';
+      const td4=document.createElement('td'); td4.textContent=t.remarks||'';
+      const td5=document.createElement('td'); td5.textContent = t.timeliness || label(t);
+      const td6=document.createElement('td');
+      const b1=document.createElement('button'); b1.className='ghost'; b1.textContent=t.status==='Received'?'Mark Released':'Mark Received';
+      b1.onclick=async()=>{ const ns=t.status==='Received'?'Released':'Received'; const set={status:ns}; if(ns==='Released') set.dateRelease=new Date().toISOString(); else set.dateRelease=null; await patch(t._id,set); await fetchAndRender(false); };
+      const b2=document.createElement('button'); b2.className='danger'; b2.textContent='Delete'; b2.style.marginLeft='6px'; b2.onclick=async()=>{ if(!confirm('Delete ticket?'))return; await del(t._id); await fetchAndRender(false); };
+      const b3=document.createElement('button'); b3.className='ghost'; b3.textContent='Edit Details'; b3.style.marginLeft='6px'; b3.onclick=()=>openDlg(t);
+      td6.append(b1,b3,b2);
+      tr.append(td0,td1,td2,td3,td4,td5,td6); $rows.appendChild(tr);
     }
-    const _id = new ObjectId(id);
-    const client = await clientPromise;
-    const db = client.db(process.env.DB_NAME || 'RegistrarDB');
-    const Tickets = db.collection('ticket');
-
-    if (req.method === 'PATCH') {
-      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-
-      // Build $set from permitted fields
-      const set = {};
-      const allowed = ['status','targetDays','dateRelease','staff','remarks','scheduleRelease','requestType','studentName','studentId'];
-      for (const k of allowed) {
-        if (k in body) set[k] = body[k];
-      }
-
-      // If status => Released and no dateRelease provided, set it to now
-      if (set.status === 'Released' && !set.dateRelease) {
-        set.dateRelease = new Date().toISOString();
-      }
-
-      // Load current document to compute processingDays/timeliness
-      const current = await Tickets.findOne({ _id });
-      if (!current) return json(res, 404, { error: 'Not found' });
-
-      const merged = { ...current, ...set };
-      const calc = computeProcessingAndTimeliness(merged);
-      if (calc.processingDays !== null) set.processingDays = calc.processingDays;
-      set.timeliness = calc.timeliness || '';
-
-      const r = await Tickets.updateOne({ _id }, { $set: set });
-      if (!r.matchedCount) return json(res, 404, { error: 'Not found' });
-      return json(res, 200, { ok: true, _id: id });
-    }
-
-    if (req.method === 'DELETE') {
-      const r = await Tickets.deleteOne({ _id });
-      if (!r.deletedCount) return json(res, 404, { error: 'Not found' });
-      return json(res, 200, { ok: true, _id: id });
-    }
-
-    res.setHeader('Allow', 'PATCH, DELETE');
-    return json(res, 405, { error: 'Method Not Allowed' });
-  } catch (e) {
-    return json(res, 500, { error: e.message || String(e) });
   }
+
+  $prev.disabled = (_page<=1);
+  $next.disabled = (_page>=totalPages);
+  const showStart = total? (start+1) : 0;
+  const showEnd = end;
+  $info.textContent = `Page ${_page} of ${totalPages} • Showing ${showStart}–${showEnd} of ${total}`;
+}
+
+async function patch(id, body){const r=await fetch('/api/ticket/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); if(!r.ok) throw new Error(await readErr(r)); return r.json();}
+async function del(id){const r=await fetch('/api/ticket/'+id,{method:'DELETE'}); if(!r.ok) throw new Error(await readErr(r)); return r.json();}
+
+async function fetchAndRender(resetPage=true){
+  _list = await fetchList();
+  if(resetPage) _page = 1;
+  renderTable();
+}
+
+// events
+document.getElementById('refresh').onclick=()=>fetchAndRender(true);
+$q.oninput=()=>{clearTimeout(window._t); window._t=setTimeout(()=>fetchAndRender(true),300);}
+$fs.onchange=()=>fetchAndRender(true);
+$pageSize.onchange=()=>{ _page = 1; renderTable(); };
+$prev.onclick=()=>{ if(_page>1){ _page--; renderTable(); } };
+$next.onclick=()=>{ const totalPages = Math.max(1, Math.ceil(_list.length / (parseInt($pageSize.value,10)||10))); if(_page<totalPages){ _page++; renderTable(); } };
+
+// ----- Modal logic -----
+const $dlgWrap = document.getElementById('dlgWrap');
+const $dlg = document.getElementById('dlg');
+const $dlgTarget = document.getElementById('dlgTarget');
+const $dlgStatus = document.getElementById('dlgStatus');
+const $dlgOR = document.getElementById('dlgOR');
+const $dlgBy = document.getElementById('dlgBy');
+const $dlgIncharge = document.getElementById('dlgIncharge');
+const $dlgCancel = document.getElementById('dlgCancel');
+
+let _editRow = null;
+
+function toLocalInputValue(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function openDlg(t){
+  _editRow = t;
+  $dlgTarget.value = (t.targetDays ?? '') === '' ? '' : t.targetDays;
+  $dlgStatus.value = t.status || 'Received';
+  $dlgOR.value = t.orNumber || '';
+  $dlgBy.value = t.receivedBy || '';
+  $dlgIncharge.value = toLocalInputValue(t.dateReceivedFromIncharge);
+  $dlgWrap.style.display = 'flex';
+  setTimeout(()=>{ $dlgTarget.focus(); }, 20);
+}
+
+function closeDlg(){ $dlgWrap.style.display = 'none'; _editRow = null; }
+
+$dlgCancel.onclick = closeDlg;
+$dlgWrap.addEventListener('click', (e)=>{ if(e.target === $dlgWrap) closeDlg(); });
+
+$dlg.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  if(!_editRow) return closeDlg();
+
+  const set = {};
+  const tDays = $dlgTarget.value.trim();
+  set.targetDays = tDays === '' ? null : Number(tDays);
+
+  set.status = $dlgStatus.value;
+  set.orNumber = $dlgOR.value.trim() || null;
+  set.receivedBy = $dlgBy.value.trim() || null;
+
+  const v = $dlgIncharge.value.trim();
+  set.dateReceivedFromIncharge = v ? new Date(v).toISOString() : null;
+
+  // If user sets status to Released and current row has no dateRelease, set it now
+  if (set.status === 'Released' && !_editRow.dateRelease) {
+    set.dateRelease = new Date().toISOString();
+  }
+  // If switching away from Released, you may choose to null out dateRelease (commented)
+  // if (_editRow.status === 'Released' && set.status !== 'Released') set.dateRelease = null;
+
+  try{
+    await patch(_editRow._id, set);
+    closeDlg();
+    await fetchAndRender(false);
+  }catch(err){
+    alert(String(err));
+  }
+});
+
+// initial
+fetchAndRender(true);
+
+// Export
+document.getElementById('exportBtn').onclick=async()=>{
+  try{
+    const p=new URLSearchParams();
+    if($q.value.trim()) p.set('q',$q.value.trim());
+    if($fs.value) p.set('status',$fs.value);
+    const r=await fetch('/api/ticket?'+p.toString());
+    if(!r.ok) return alert(await readErr(r));
+    const rows=await r.json();
+    if(!rows.length) return alert('No data to export.');
+    const headers=['_id','ref','studentId','studentName','requestType','dateReceived','scheduleRelease','dateRelease','processingDays','targetDays','orNumber','dateReceivedFromIncharge','receivedBy','remarks','staff','status','timeliness','createdAt'];
+    const csv=[headers.join(',')];
+    for(const t of rows){csv.push(headers.map(h=>`"${(t[h]??'').toString().replace(/"/g,'""')}"`).join(','));}
+    const blob=new Blob([csv.join('\n')],{type:'text/csv'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download='tickets-update-export.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){alert(String(e));}
 };
+</script>
+</body>
+</html>
