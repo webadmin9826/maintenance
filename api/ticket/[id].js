@@ -1,7 +1,10 @@
 // /api/ticket/[id].js
-// One function that serves two roles:
-// 1) /api/ticket/<ObjectId>   → Registrar tickets (PATCH, DELETE)
-// 2) /api/ticket/logs         → Library logs (GET with filters, POST insert)
+// Unified router for both Registrar tickets and Library logs.
+// Paths:
+//   /api/ticket/logs      → Library logs (GET with filters, POST insert)
+//   /api/ticket/list      → Registrar list (GET with filters; returns ALL)
+//   /api/ticket/new       → Registrar create (POST)
+//   /api/ticket/<ObjectId>→ Registrar update (PATCH), delete (DELETE)
 
 const { ObjectId } = require('mongodb');
 const clientPromise = require('../../lib/mongo');
@@ -13,10 +16,14 @@ function json(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
+function rx(val) {
+  try { return new RegExp(String(val).trim(), 'i'); } catch { return null; }
+}
+
 // best-effort date → ISO, or passthrough if not parseable
 function toISOorNull(v) {
   if (v === null) return null;
-  if (v === undefined || v === '') return undefined; // keep unchanged if empty
+  if (v === undefined || v === '') return undefined;
   const d = new Date(v);
   return Number.isFinite(d.getTime()) ? d.toISOString() : v;
 }
@@ -26,14 +33,28 @@ function getIdFromReq(req) {
   let id = q.id;
   if (Array.isArray(id)) id = id[0];
   if (!id && req.url) {
-    const m = req.url.match(/\/api\/ticket\/([^/?#]+)(?:[/?#]|$)/);
+    const m = req.url.match(/\/api\/ticket\/([^/?#]+)(?:[/?#]|$)/i);
     if (m) id = m[1];
   }
-  return id || '';
+  return (id || '').toLowerCase();
 }
 
-function rx(val) {
-  try { return new RegExp(String(val).trim(), 'i'); } catch { return null; }
+/* ----- Registrar helpers ----- */
+function makeRef(dateReceivedISO, studentName) {
+  // Format: ddmmyyyyHHmm + initials (First, Middle, Last) -> e.g., 011020250804AVL
+  const d = new Date(dateReceivedISO || Date.now());
+  const pad = n => String(n).padStart(2, '0');
+  const dd = pad(d.getDate());
+  const mm = pad(d.getMonth() + 1);
+  const yyyy = d.getFullYear();
+  const HH = pad(d.getHours());
+  const MM = pad(d.getMinutes());
+  const parts = String(studentName || '').trim().split(/\s+/);
+  const first = parts[0]?.[0] || '';
+  const mid   = parts.length > 2 ? parts[1]?.[0] || '' : '';
+  const last  = parts.length ? parts[parts.length - 1]?.[0] || '' : '';
+  const initials = (first + mid + last).toUpperCase();
+  return `${dd}${mm}${yyyy}${HH}${MM}${initials}`;
 }
 
 module.exports = async (req, res) => {
@@ -41,11 +62,12 @@ module.exports = async (req, res) => {
     const client = await clientPromise;
     const id = getIdFromReq(req);
 
-    // ------------------------------------------------------------
-    // ROUTE A: Library Logs shim at /api/ticket/logs  (GET/POST)
-    // ------------------------------------------------------------
+    /* ============================================================
+       ROUTE A: Library Logs  (/api/ticket/logs)  GET/POST
+       DB: process.env.LIB_DB_NAME || 'LibrabryLog', coll: 'timecapture'
+       ============================================================ */
     if (id === 'logs') {
-      const dbName = process.env.LIB_DB_NAME || 'LibrabryLog'; // (your given spelling)
+      const dbName = process.env.LIB_DB_NAME || 'LibrabryLog';
       const db = client.db(dbName);
       const col = db.collection('timecapture');
 
@@ -56,11 +78,7 @@ module.exports = async (req, res) => {
         if (course && String(course).trim()) filter.course = String(course).trim();
         if (q && String(q).trim()) {
           const r = rx(q);
-          if (r) {
-            filter.$or = [
-              { name: r }, { purpose: r }, { extra: r }, { yearLevel: r }, { course: r }
-            ];
-          }
+          if (r) filter.$or = [{ name: r }, { purpose: r }, { extra: r }, { yearLevel: r }, { course: r }];
         }
         const docs = await col.find(filter).sort({ _id: -1 }).toArray(); // no limit
         return json(res, 200, docs);
@@ -69,10 +87,8 @@ module.exports = async (req, res) => {
       if (req.method === 'POST') {
         const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
         const required = ['date', 'timeIn', 'name', 'yearLevel', 'course', 'purpose'];
-        const missing = required.filter(k => !body[k] || String(body[k]).trim() === '');
-        if (missing.length) {
-          return json(res, 400, { error: 'Missing required fields: ' + missing.join(', ') });
-        }
+        const miss = required.filter(k => !body[k] || String(body[k]).trim() === '');
+        if (miss.length) return json(res, 400, { error: 'Missing required fields: ' + miss.join(', ') });
 
         const doc = {
           date: String(body.date),
@@ -85,7 +101,6 @@ module.exports = async (req, res) => {
           via: body.via ? String(body.via) : 'manual',
           createdAt: new Date().toISOString()
         };
-
         const r = await col.insertOne(doc);
         return json(res, 200, { ok: true, _id: r.insertedId.toString() });
       }
@@ -94,43 +109,105 @@ module.exports = async (req, res) => {
       return json(res, 405, { error: 'Method Not Allowed' });
     }
 
-    // ------------------------------------------------------------
-    // ROUTE B: Registrar Tickets at /api/ticket/<ObjectId> (PATCH/DELETE)
-    // ------------------------------------------------------------
+    /* ============================================================
+       ROUTE B: Registrar LIST  (/api/ticket/list)  GET
+       DB: process.env.DB_NAME || 'RegistrarDB', coll: 'ticket'
+       ============================================================ */
+    if (id === 'list') {
+      const db = client.db(process.env.DB_NAME || 'RegistrarDB');
+      const Tickets = db.collection('ticket');
+
+      const { q, status } = req.query || {};
+      const filter = {};
+      if (status && String(status).trim()) filter.status = String(status).trim();
+
+      if (q && String(q).trim()) {
+        const r = rx(q);
+        if (r) {
+          filter.$or = [
+            { ref: r }, { studentId: r }, { studentName: r }, { requestType: r },
+            { remarks: r }, { staff: r }, { orNumber: r }, { receivedBy: r }
+          ];
+        }
+      }
+
+      // Return ALL (no limit); newest first
+      const docs = await Tickets.find(filter).sort({ _id: -1 }).toArray();
+      return json(res, 200, docs);
+    }
+
+    /* ============================================================
+       ROUTE C: Registrar CREATE  (/api/ticket/new)  POST
+       ============================================================ */
+    if (id === 'new') {
+      if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return json(res, 405, { error: 'Method Not Allowed' });
+      }
+      const db = client.db(process.env.DB_NAME || 'RegistrarDB');
+      const Tickets = db.collection('ticket');
+
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      // minimal required fields
+      const required = ['studentName', 'requestType', 'dateReceived'];
+      const miss = required.filter(k => !body[k] || String(body[k]).trim() === '');
+      if (miss.length) return json(res, 400, { error: 'Missing required fields: ' + miss.join(', ') });
+
+      const doc = {
+        ref: makeRef(body.dateReceived, body.studentName),
+        studentId: body.studentId ? String(body.studentId) : '',
+        studentName: String(body.studentName),
+        requestType: String(body.requestType),
+        dateReceived: toISOorNull(body.dateReceived) || new Date().toISOString(),
+        scheduleRelease: toISOorNull(body.scheduleRelease) ?? null,
+        dateRelease: toISOorNull(body.dateRelease) ?? null,
+        targetDays: (body.targetDays === '' || body.targetDays == null) ? null : Number(body.targetDays),
+        remarks: body.remarks ? String(body.remarks) : '',
+        staff: body.staff ? String(body.staff) : '',
+        status: body.status ? String(body.status) : 'Received',
+        // extra fields you added:
+        orNumber: body.orNumber ? String(body.orNumber) : '',
+        dateReceivedFromIncharge: toISOorNull(body.dateReceivedFromIncharge) ?? null,
+        receivedBy: body.receivedBy ? String(body.receivedBy) : '',
+        createdAt: new Date().toISOString()
+      };
+
+      // compute processingDays & timeliness
+      const calc = computeProcessingAndTimeliness(doc);
+      if (calc.processingDays !== null) doc.processingDays = calc.processingDays;
+      doc.timeliness = calc.timeliness || '';
+
+      const r = await Tickets.insertOne(doc);
+      return json(res, 200, { ok: true, _id: r.insertedId.toString(), ref: doc.ref });
+    }
+
+    /* ============================================================
+       ROUTE D: Registrar PATCH/DELETE  (/api/ticket/<ObjectId>)
+       ============================================================ */
     if (!/^[a-fA-F0-9]{24}$/.test(id)) {
       return json(res, 400, { error: 'Invalid or missing id' });
     }
     const _id = new ObjectId(id);
-
     const db = client.db(process.env.DB_NAME || 'RegistrarDB');
     const Tickets = db.collection('ticket');
 
     if (req.method === 'PATCH') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       const set = {};
-
-      // Allow-list of fields accepted from UI
       const allowed = [
-        'status', 'targetDays', 'dateRelease', 'staff', 'remarks', 'scheduleRelease',
-        'requestType', 'studentName', 'studentId',
-        // added fields
-        'orNumber', 'dateReceivedFromIncharge', 'receivedBy'
+        'status','targetDays','dateRelease','staff','remarks','scheduleRelease',
+        'requestType','studentName','studentId','orNumber','dateReceivedFromIncharge','receivedBy'
       ];
-      for (const k of allowed) {
-        if (Object.prototype.hasOwnProperty.call(body, k)) set[k] = body[k];
-      }
+      for (const k of allowed) if (Object.prototype.hasOwnProperty.call(body, k)) set[k] = body[k];
 
-      // Normalize date-ish values
       if ('dateRelease' in set) set.dateRelease = toISOorNull(set.dateRelease);
       if ('scheduleRelease' in set) set.scheduleRelease = toISOorNull(set.scheduleRelease);
       if ('dateReceivedFromIncharge' in set) set.dateReceivedFromIncharge = toISOorNull(set.dateReceivedFromIncharge);
 
-      // If changing to Released without dateRelease, set now
       if (set.status === 'Released' && (set.dateRelease === undefined || set.dateRelease === '')) {
         set.dateRelease = new Date().toISOString();
       }
 
-      // Compute processingDays + timeliness
       const current = await Tickets.findOne({ _id });
       if (!current) return json(res, 404, { error: 'Not found' });
 
