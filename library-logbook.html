@@ -66,14 +66,29 @@
         </select>
       </div>
     </div>
-    <label for="purpose">Purpose *</label>
-    <input id="purpose" placeholder="Research, borrow book, study, print, etc." required>
+
     <div class="row">
+      <div>
+        <label for="purposeSel">Purpose *</label>
+        <select id="purposeSel" required>
+          <option value="">Select Purpose</option>
+          <option>To Review</option>
+          <option>Borrow Books</option>
+          <option>Return Books</option>
+          <option>To Read</option>
+          <option>To Find Books</option>
+          <option>To Study</option>
+          <option>To do Research/thesis</option>
+          <option>To do activities</option>
+          <option>Signing of clearance</option>
+        </select>
+      </div>
       <div>
         <label for="extra">Extra (optional)</label>
         <input id="extra" placeholder="Additional note (e.g., Subject, Librarian)">
       </div>
     </div>
+
     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="primary" id="btnSaveManual">Save Entry</button>
       <span class="muted">Date &amp; Time In will be recorded automatically. A QR code will be generated.</span>
@@ -129,8 +144,29 @@
       <div><label>Date</label><input id="dlgDate" readonly></div>
       <div><label>Time In</label><input id="dlgTime" readonly></div>
     </div>
-    <label>Purpose *</label><input id="dlgPurpose" placeholder="e.g., Research" required>
-    <label>Extra (optional)</label><input id="dlgExtra" placeholder="Additional note">
+
+    <div class="row">
+      <div>
+        <label>Purpose *</label>
+        <select id="dlgPurposeSel" required>
+          <option value="">Select Purpose</option>
+          <option>To Review</option>
+          <option>Borrow Books</option>
+          <option>Return Books</option>
+          <option>To Read</option>
+          <option>To Find Books</option>
+          <option>To Study</option>
+          <option>To do Research/thesis</option>
+          <option>To do activities</option>
+          <option>Signing of clearance</option>
+        </select>
+      </div>
+      <div>
+        <label>Extra (optional)</label>
+        <input id="dlgExtra" placeholder="Additional note">
+      </div>
+    </div>
+
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
       <button type="button" class="ghost" id="dlgCancel">Cancel</button>
       <button type="submit" class="primary">Save</button>
@@ -201,20 +237,19 @@ document.getElementById('btnSaveManual').onclick = async ()=>{
   const name = document.getElementById('name').value.trim();
   const year = document.getElementById('year').value.trim();
   const course = document.getElementById('course').value.trim();
-  const purpose = document.getElementById('purpose').value.trim();
+  const purpose = document.getElementById('purposeSel').value.trim();
   const extra = document.getElementById('extra').value.trim();
   if(!name || !year || !course || !purpose){ alert('Please fill in Name, Year Level, Course, and Purpose.'); return; }
   const now = new Date();
   const payload = { date: todayISO(now), timeIn: timeHHMMSS(now), name, yearLevel: year, course, purpose, extra: extra||null, via: 'manual' };
   try{
     await saveEntryServer(payload);
-    // Show QR with {name, yearLevel, course}
     await showQR({ name, year, course, data: JSON.stringify({ name, yearLevel: year, course }) });
     // Reset form
     document.getElementById('name').value='';
     document.getElementById('year').value='';
     document.getElementById('course').value='';
-    document.getElementById('purpose').value='';
+    document.getElementById('purposeSel').value='';
     document.getElementById('extra').value='';
   }catch(e){ alert(String(e.message||e)); }
 };
@@ -333,7 +368,7 @@ const dlgYear=document.getElementById('dlgYear');
 const dlgCourse=document.getElementById('dlgCourse');
 const dlgDate=document.getElementById('dlgDate');
 const dlgTime=document.getElementById('dlgTime');
-const dlgPurpose=document.getElementById('dlgPurpose');
+const dlgPurposeSel=document.getElementById('dlgPurposeSel');
 const dlgExtra=document.getElementById('dlgExtra');
 const dlgCancel=document.getElementById('dlgCancel');
 
@@ -344,10 +379,10 @@ function openDialog(prefill){
   const when = prefill.when || new Date();
   dlgDate.value = todayISO(when);
   dlgTime.value = timeHHMMSS(when);
-  dlgPurpose.value = '';
+  dlgPurposeSel.value = '';
   dlgExtra.value = '';
   dlgWrap.style.display='flex';
-  setTimeout(()=>dlgPurpose.focus(),10);
+  setTimeout(()=>dlgPurposeSel.focus(),10);
 }
 function closeDialog(){ dlgWrap.style.display='none'; }
 dlgCancel.onclick = closeDialog;
@@ -361,7 +396,7 @@ dlg.addEventListener('submit', async (e)=>{
     name: dlgName.value.trim(),
     yearLevel: dlgYear.value.trim(),
     course: dlgCourse.value.trim(),
-    purpose: (dlgPurpose.value||'').trim(),
+    purpose: (dlgPurposeSel.value||'').trim(),
     extra: (dlgExtra.value||'').trim(),
     via: 'qr'
   };
