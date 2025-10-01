@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Library Log — Admin Monitor</title>
+<style>
+  :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e;--danger:#ef4444}
+  *{box-sizing:border-box}body{margin:0;font:15px/1.48 system-ui,Segoe UI,Roboto;background:var(--bg);color:var(--ink)}
+  .wrap{max-width:1100px;margin:36px auto;padding:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+  h1{margin:0 0 10px}.muted{color:var(--muted)}
+  label{display:block;margin:10px 0 6px}
+  input,select{padding:10px 12px;border-radius:10px;border:1px solid #334155;background:#0b1324;color:var(--ink)}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  button{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+  .ghost{background:#1f2937;color:#e5e7eb}
+  .primary{background:var(--accent);color:#031}
+  .danger{background:var(--danger);color:#ffe4e6}
+  table{width:100%;border-collapse:separate;border-spacing:0 8px}
+  th,td{padding:10px 12px;text-align:left;vertical-align:top}
+  thead th{color:#cbd5e1}
+  tbody tr{background:var(--card);border:1px solid var(--line)}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:12px}
+  .pager button[disabled]{opacity:.5;cursor:not-allowed}
+</style>
+</head>
+<body>
+<script>
+(function ensureAuth(){
+  try{
+    const s = JSON.parse(localStorage.getItem('libAdmin')||'null');
+    if(!s || !s.exp || Date.now() >= s.exp){ location.replace('/library-login.html?next=/admin-library.html'); }
+  }catch{ location.replace('/library-login.html?next=/admin-library.html'); }
+})();
+</script>
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
+      <h1>Library Log — Admin Monitor</h1>
+      <div style="display:flex;gap:8px">
+        <button id="logout" class="danger">Logout</button>
+        <a class="ghost" href="/library-logbook.html" style="text-decoration:none;padding:10px 14px;border-radius:10px">Open Logbook</a>
+      </div>
+    </div>
+    <div class="toolbar">
+      <label>From <input id="from" type="date"></label>
+      <label>To <input id="to" type="date"></label>
+      <input id="q" placeholder="Search name, year level, purpose...">
+      <button class="ghost" id="refresh">Refresh</button>
+      <button class="ghost" id="export">Export CSV</button>
+      <span class="muted" style="margin-left:auto">Rows per page</span>
+      <select id="pageSize">
+        <option value="10" selected>10</option><option value="25">25</option>
+        <option value="50">50</option><option value="100">100</option>
+      </select>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:120px">Date</th>
+          <th style="width:100px">Time In</th>
+          <th style="width:260px">Name</th>
+          <th style="width:120px">Year Level</th>
+          <th>Purpose</th>
+          <th style="width:160px">Extra</th>
+          <th style="width:100px">Source</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
+    <div class="pager">
+      <div>
+        <button class="ghost" id="prev">Prev</button>
+        <button class="ghost" id="next">Next</button>
+      </div>
+      <div class="muted" id="info">Page 1 of 1 • Showing 0–0 of 0</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $rows = document.getElementById('rows');
+const $from = document.getElementById('from');
+const $to = document.getElementById('to');
+const $q = document.getElementById('q');
+const $pageSize = document.getElementById('pageSize');
+const $prev = document.getElementById('prev');
+const $next = document.getElementById('next');
+const $info = document.getElementById('info');
+
+document.getElementById('logout').onclick = ()=>{ localStorage.removeItem('libAdmin'); location.replace('/library-login.html'); };
+
+let page = 1, total = 0, pageSize = 10, cacheRows = [];
+
+async function readErr(r){ try{ const ct=r.headers.get('content-type')||''; if(ct.includes('json')){ const j=await r.json(); return j.error||JSON.stringify(j);} return (await r.text()).slice(0,400);} catch(e){ return String(e); } }
+
+async function load(){
+  pageSize = parseInt($pageSize.value,10) || 10;
+  const p = new URLSearchParams();
+  if($from.value) p.set('from',$from.value);
+  if($to.value) p.set('to',$to.value);
+  if($q.value.trim()) p.set('q',$q.value.trim());
+  p.set('page', String(page));
+  p.set('pageSize', String(pageSize));
+  const r = await fetch('/api/logs?'+p.toString());
+  if(!r.ok) throw new Error(await readErr(r));
+  const data = await r.json();
+  cacheRows = data.rows || [];
+  total = data.total || 0;
+  render();
+}
+
+function render(){
+  $rows.textContent='';
+  if(!cacheRows.length){
+    const tr=document.createElement('tr'); const td=document.createElement('td');
+    td.colSpan=7; td.textContent='No records.'; td.className='muted'; tr.appendChild(td);
+    $rows.appendChild(tr);
+  } else {
+    for(const it of cacheRows){
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td>${it.date||''}</td><td>${it.timeIn||''}</td>
+                      <td>${(it.name||'')}</td><td>${it.yearLevel||''}</td>
+                      <td>${it.purpose||''}</td><td>${it.extra||''}</td>
+                      <td>${it.via||''}</td>`;
+      $rows.appendChild(tr);
+    }
+  }
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total ? (page-1)*pageSize + 1 : 0;
+  const end = Math.min(page*pageSize, total);
+  $info.textContent = `Page ${page} of ${pages} • Showing ${start}–${end} of ${total}`;
+  $prev.disabled = page<=1; $next.disabled = page>=pages;
+}
+
+document.getElementById('refresh').onclick = ()=>{ page=1; load().catch(e=>alert(e)); };
+$pageSize.onchange = ()=>{ page=1; load().catch(e=>alert(e)); };
+$prev.onclick = ()=>{ if(page>1){ page--; load().catch(e=>alert(e)); } };
+$next.onclick = ()=>{ page++; load().catch(e=>alert(e)); };
+
+$q.addEventListener('keydown', e=>{ if(e.key==='Enter'){ page=1; load().catch(e=>alert(e)); } });
+$from.onchange = ()=>{ page=1; load().catch(e=>alert(e)); };
+$to.onchange = ()=>{ page=1; load().catch(e=>alert(e)); };
+
+document.getElementById('export').onclick = async ()=>{
+  try{
+    const p = new URLSearchParams();
+    if($from.value) p.set('from',$from.value);
+    if($to.value) p.set('to',$to.value);
+    if($q.value.trim()) p.set('q',$q.value.trim());
+    p.set('limit','0'); // all rows
+    const r = await fetch('/api/logs?'+p.toString());
+    if(!r.ok) return alert(await readErr(r));
+    const data = await r.json();
+    const rows = data.rows || data || [];
+    if(!rows.length) return alert('No data to export.');
+    const headers = ['date','timeIn','name','yearLevel','purpose','extra','via','createdAt','_id'];
+    const csv = [headers.join(',')];
+    for(const it of rows){
+      csv.push(headers.map(h => `"${(it[h]??'').toString().replace(/"/g,'""')}"`).join(','));
+    }
+    const blob = new Blob([csv.join('\n')], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download='library-log-export.csv'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+  }catch(e){ alert(String(e)); }
+};
+
+load().catch(e=>alert(e));
+</script>
+</body>
+</html>
