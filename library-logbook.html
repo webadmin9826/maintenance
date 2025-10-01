@@ -151,10 +151,22 @@
   </div>
 </div>
 
-<!-- QRCode library via CDN -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgI4Hcz6Y8VQx9nq8Sx3HkT8Jm0q3JfK0iH2Q4l9dY8rN2A1+JrRhJQ0N2v2M1hTg4qJ1m3j1rYk8K+G8Fo8w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- QRCode library (load before main script) -->
+<script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
 
 <script>
+/* ---------- Ensure QRCode global (fallback loader) ---------- */
+async function ensureQRCode() {
+  if (window.QRCode) return true;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return !!window.QRCode;
+}
+
 /* ---------- Shared helpers ---------- */
 function todayISO(d=new Date()){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), da=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${da}`; }
 function timeHHMMSS(d=new Date()){ const h=String(d.getHours()).padStart(2,'0'), mi=String(d.getMinutes()).padStart(2,'0'), s=String(d.getSeconds()).padStart(2,'0'); return `${h}:${mi}:${s}`; }
@@ -174,7 +186,7 @@ function setActive(btn, panel){
 tabManual.onclick = ()=> setActive(tabManual, panelManual);
 tabScan.onclick   = ()=> setActive(tabScan, panelScan);
 
-/* POST helper */
+/* POST helper (backend: /api/logs) */
 async function saveEntryServer(payload){
   const r = await fetch('/api/logs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
   if(!r.ok){
@@ -196,9 +208,8 @@ document.getElementById('btnSaveManual').onclick = async ()=>{
   const payload = { date: todayISO(now), timeIn: timeHHMMSS(now), name, yearLevel: year, course, purpose, extra: extra||null, via: 'manual' };
   try{
     await saveEntryServer(payload);
-    // Show QR modal
-    const data = JSON.stringify({ name, yearLevel: year, course });
-    showQR({ name, year, course, data });
+    // Show QR with {name, yearLevel, course}
+    await showQR({ name, year, course, data: JSON.stringify({ name, yearLevel: year, course }) });
     // Reset form
     document.getElementById('name').value='';
     document.getElementById('year').value='';
@@ -208,7 +219,7 @@ document.getElementById('btnSaveManual').onclick = async ()=>{
   }catch(e){ alert(String(e.message||e)); }
 };
 
-/* ---------- QR Scan (improved back-camera + photo fallback) ---------- */
+/* ---------- QR Scan (back-camera + photo fallback) ---------- */
 const scanMsg = document.getElementById('scanMsg');
 const video = document.getElementById('video');
 const cameraSel = document.getElementById('camera');
@@ -399,26 +410,17 @@ const qrTarget = document.getElementById('qrTarget');
 const qrInfo = document.getElementById('qrInfo');
 const qrDownload = document.getElementById('qrDownload');
 const qrClose = document.getElementById('qrClose');
-let _qrInstance = null;
 
-function showQR({ name, year, course, data }){
-  qrTarget.innerHTML = ''; // reset
+async function showQR({ name, year, course, data }){
+  if(!(await ensureQRCode())){ alert('QR library failed to load. Please reload the page.'); return; }
+  qrTarget.innerHTML = '';
   qrInfo.textContent = `${name} • ${year} • ${course}`;
-  // Create QR
-  _qrInstance = new QRCode(qrTarget, {
-    text: data,
-    width: 240,
-    height: 240,
-    correctLevel: QRCode.CorrectLevel.M
-  });
+  new QRCode(qrTarget, { text: data, width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M });
   qrWrap.style.display = 'flex';
 }
-
 qrClose.onclick = ()=>{ qrWrap.style.display='none'; };
 qrWrap.addEventListener('click', (e)=>{ if(e.target===qrWrap) qrWrap.style.display='none'; });
-
 qrDownload.onclick = ()=>{
-  // qrcodejs either creates <img> or <canvas>; handle both
   const img = qrTarget.querySelector('img');
   const canvas = qrTarget.querySelector('canvas');
   let url = '';
@@ -426,11 +428,8 @@ qrDownload.onclick = ()=>{
   else if (img) url = img.src;
   if (!url) { alert('QR not ready yet.'); return; }
   const a = document.createElement('a');
-  a.href = url;
-  a.download = 'student-qr.png';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>document.body.removeChild(a), 50);
+  a.href = url; a.download = 'student-qr.png';
+  document.body.appendChild(a); a.click(); setTimeout(()=>document.body.removeChild(a), 50);
 };
 </script>
 
