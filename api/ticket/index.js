@@ -109,12 +109,15 @@ module.exports = async (req, res) => {
         if (from) filter.dateReceived.$gte = new Date(from);
         if (to)   filter.dateReceived.$lte = new Date(new Date(to).getTime() + 24*60*60*1000 - 1);
       }
+     // ...inside module.exports for GET:
       if (q) {
         const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
         filter.$or = [
-          { ref: rx }, { studentId: rx }, { studentName: rx }, { requestType: rx }, { remarks: rx }, { staff: rx }
+          { ref: rx }, { studentId: rx }, { studentName: rx }, { requestType: rx },
+          { remarks: rx }, { staff: rx }, { orNumber: rx }, { receivedBy: rx } // ← add these
         ];
       }
+
 
       let cursor = Tickets.find(filter).sort({ dateReceived: -1 });
       const lim = parseInt(limit, 10);
