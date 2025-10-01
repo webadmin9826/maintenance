@@ -24,6 +24,11 @@
   .videoWrap{position:relative;border:1px dashed #334155;border-radius:12px;padding:8px;display:grid;place-items:center;min-height:260px}
   video{max-width:100%;border-radius:10px}
   .hint{position:absolute;bottom:8px;left:8px;font-size:12px;color:#cbd5e1;background:rgba(0,0,0,.35);padding:4px 8px;border-radius:999px}
+  /* QR Modal */
+  .modal-wrap{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:60}
+  .modal{width:100%;max-width:520px;background:#0b1324;border:1px solid #1f2937;border-radius:14px;padding:18px}
+  .modal h3{margin:0 0 8px}
+  .modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 </style>
 </head>
 <body>
@@ -53,6 +58,13 @@
           <option>5th Year</option>
         </datalist>
       </div>
+      <div>
+        <label for="course">Course *</label>
+        <select id="course" required>
+          <option value="">Select Course</option>
+          <option>BSN</option><option>BSMid</option><option>BSIT</option><option>BSP</option><option>BSRT</option>
+        </select>
+      </div>
     </div>
     <label for="purpose">Purpose *</label>
     <input id="purpose" placeholder="Research, borrow book, study, print, etc." required>
@@ -64,13 +76,13 @@
     </div>
     <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
       <button class="primary" id="btnSaveManual">Save Entry</button>
-      <span class="muted">Date &amp; Time In will be recorded automatically.</span>
+      <span class="muted">Date &amp; Time In will be recorded automatically. A QR code will be generated.</span>
     </div>
   </div>
 
   <!-- QR Scan -->
   <div id="panelScan" class="card" style="display:none">
-    <p class="muted">Scan a student's QR to auto-fill Name and Year Level. Date &amp; Time In are captured automatically.</p>
+    <p class="muted">Scan a student's QR to auto-fill Name, Year Level, and Course. Date &amp; Time In are captured automatically.</p>
     <div class="row">
       <div>
         <label for="camera">Camera</label>
@@ -89,8 +101,8 @@
   </div>
 </div>
 
-<!-- Confirmation Dialog -->
-<div id="dlgWrap" class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);align-items:center;justify-content:center;padding:16px;z-index:50;max-width:520px;margin:0 auto">
+<!-- Scan Confirmation Dialog -->
+<div id="dlgWrap" class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:16px;z-index:50;max-width:520px;margin:0 auto">
   <form id="dlg">
     <h3 id="dlgTitle" style="margin:0 0 8px">Confirm Scan</h3>
     <div class="row">
@@ -107,6 +119,13 @@
       </div>
     </div>
     <div class="row">
+      <div>
+        <label>Course *</label>
+        <select id="dlgCourse" required>
+          <option value="">Select Course</option>
+          <option>BSN</option><option>BSMid</option><option>BSIT</option><option>BSP</option><option>BSRT</option>
+        </select>
+      </div>
       <div><label>Date</label><input id="dlgDate" readonly></div>
       <div><label>Time In</label><input id="dlgTime" readonly></div>
     </div>
@@ -118,6 +137,22 @@
     </div>
   </form>
 </div>
+
+<!-- QR Result Modal (after manual save) -->
+<div id="qrWrap" class="modal-wrap" aria-hidden="true">
+  <div class="modal">
+    <h3>Student QR Code</h3>
+    <p class="muted" id="qrInfo"></p>
+    <div id="qrTarget" style="display:grid;place-items:center;padding:10px"></div>
+    <div class="actions">
+      <button class="ghost" id="qrDownload">Download PNG</button>
+      <button class="primary" id="qrClose">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- QRCode library via CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgI4Hcz6Y8VQx9nq8Sx3HkT8Jm0q3JfK0iH2Q4l9dY8rN2A1+JrRhJQ0N2v2M1hTg4qJ1m3j1rYk8K+G8Fo8w==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <script>
 /* ---------- Shared helpers ---------- */
@@ -139,7 +174,7 @@ function setActive(btn, panel){
 tabManual.onclick = ()=> setActive(tabManual, panelManual);
 tabScan.onclick   = ()=> setActive(tabScan, panelScan);
 
-/* POST helper used by manual + scan */
+/* POST helper */
 async function saveEntryServer(payload){
   const r = await fetch('/api/logs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
   if(!r.ok){
@@ -153,16 +188,21 @@ async function saveEntryServer(payload){
 document.getElementById('btnSaveManual').onclick = async ()=>{
   const name = document.getElementById('name').value.trim();
   const year = document.getElementById('year').value.trim();
+  const course = document.getElementById('course').value.trim();
   const purpose = document.getElementById('purpose').value.trim();
   const extra = document.getElementById('extra').value.trim();
-  if(!name || !year || !purpose){ alert('Please fill in Name, Year Level, and Purpose.'); return; }
+  if(!name || !year || !course || !purpose){ alert('Please fill in Name, Year Level, Course, and Purpose.'); return; }
   const now = new Date();
-  const payload = { date: todayISO(now), timeIn: timeHHMMSS(now), name, yearLevel: year, purpose, extra: extra||null, via: 'manual' };
+  const payload = { date: todayISO(now), timeIn: timeHHMMSS(now), name, yearLevel: year, course, purpose, extra: extra||null, via: 'manual' };
   try{
     await saveEntryServer(payload);
-    alert('Entry saved.');
+    // Show QR modal
+    const data = JSON.stringify({ name, yearLevel: year, course });
+    showQR({ name, year, course, data });
+    // Reset form
     document.getElementById('name').value='';
     document.getElementById('year').value='';
+    document.getElementById('course').value='';
     document.getElementById('purpose').value='';
     document.getElementById('extra').value='';
   }catch(e){ alert(String(e.message||e)); }
@@ -178,43 +218,29 @@ const btnStop = document.getElementById('btnStop');
 let stream = null, rafId = null, detector = null, scanning = false;
 
 async function primeCameraPermission(){
-  try{
-    const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    s.getTracks().forEach(t=>t.stop());
-  }catch{}
+  try{ const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); s.getTracks().forEach(t=>t.stop()); }catch{}
 }
 async function enumerateCameras(){
   const devices = await navigator.mediaDevices.enumerateDevices();
   const cams = devices.filter(d=>d.kind==='videoinput');
   cameraSel.textContent='';
-  cams.forEach((c,i)=>{
-    const opt=document.createElement('option');
-    opt.value=c.deviceId; opt.textContent=c.label||`Camera ${i+1}`;
-    cameraSel.appendChild(opt);
-  });
+  cams.forEach((c,i)=>{ const opt=document.createElement('option'); opt.value=c.deviceId; opt.textContent=c.label||`Camera ${i+1}`; cameraSel.appendChild(opt); });
   return cams;
 }
 function pickBestBackCamera(cams){
   if(!cams||!cams.length) return null;
-  let preferred = cams.find(c=>/back|rear|environment/i.test(c.label||''));
-  if(!preferred) preferred=cams[cams.length-1];
+  let preferred = cams.find(c=>/back|rear|environment/i.test(c.label||'')); if(!preferred) preferred=cams[cams.length-1];
   return preferred.deviceId||null;
 }
 async function ensureDetector(){
   if(!('BarcodeDetector' in window)) return null;
-  if(!detector){
-    try{ detector = new BarcodeDetector({ formats:['qr_code'] }); }
-    catch{ detector=null; }
-  }
+  if(!detector){ try{ detector = new BarcodeDetector({ formats:['qr_code'] }); } catch{ detector=null; } }
   return detector;
 }
-
 async function startScan(){
   scanMsg.textContent='';
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    scanMsg.textContent='Camera API not supported on this device/browser.'; return;
-  }
-  stopScan(); // close previous
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ scanMsg.textContent='Camera API not supported on this device/browser.'; return; }
+  stopScan();
   await primeCameraPermission();
   const cams = await enumerateCameras();
   if(!cams.length){ scanMsg.textContent='No cameras found. Check permissions.'; return; }
@@ -227,9 +253,7 @@ async function startScan(){
     const det = await ensureDetector();
     if(!det){ scanMsg.textContent='Live scan not supported. Use Manual Entry or Photo Scan below.'; return; }
     loopDetect();
-  }catch(err){
-    scanMsg.textContent='Cannot start camera: '+(err.message||err.name||err);
-  }
+  }catch(err){ scanMsg.textContent='Cannot start camera: '+(err.message||err.name||err); }
 }
 function stopScan(){
   scanning=false;
@@ -242,17 +266,12 @@ async function loopDetect(){
   if(!scanning || !detector) return;
   try{
     const results = await detector.detect(video);
-    if(results && results.length){
-      const code = results[0].rawValue || '';
-      handleScan(code);
-      stopScan();
-      return;
-    }
+    if(results && results.length){ const code = results[0].rawValue || ''; handleScan(code); stopScan(); return; }
   }catch{}
   rafId = requestAnimationFrame(loopDetect);
 }
 
-/* More robust QR parsing */
+/* Robust QR parsing: supports name, year, course */
 function parseQR(text){
   const cleaned = String(text||'').trim();
 
@@ -261,36 +280,46 @@ function parseQR(text){
     const j = JSON.parse(cleaned);
     const name = j.name || j.Name || j.fullname || j.fullName;
     const yl = j.yearLevel || j.yearlevel || j.year || j.grade || j.Grade;
-    if (name) return { name: String(name), yearLevel: yl ? String(yl) : '' };
+    const course = j.course || j.Course || j.program || j.Program;
+    if (name) return { name: String(name), yearLevel: yl ? String(yl) : '', course: course ? String(course) : '' };
   } catch {}
 
-  // Common delimiters: | , ; - or newline
+  // Common delimiters: | , ; - or newline (support 2 or 3 parts)
   const parts = cleaned.split(/\s*[|,;\n-]\s*/);
-  if (parts.length >= 2 && parts[0]) return { name: parts[0].trim(), yearLevel: (parts[1]||'').trim() };
+  if (parts.length >= 2) {
+    return {
+      name: parts[0]?.trim() || '',
+      yearLevel: parts[1]?.trim() || '',
+      course: parts[2]?.trim() || ''
+    };
+  }
 
-  // Parentheses: "Name (Year Level)"
-  const mParen = cleaned.match(/^(.+)\(([^)]+)\)\s*$/);
-  if (mParen) return { name: mParen[1].trim(), yearLevel: mParen[2].trim() };
+  // Parentheses: "Name (Year) - Course"
+  const mNYC = cleaned.match(/^(.+?)\s*\(([^)]+)\)\s*(?:[-–]\s*(.+))?$/);
+  if (mNYC) return { name: mNYC[1].trim(), yearLevel: (mNYC[2]||'').trim(), course: (mNYC[3]||'').trim() };
 
   // Key:Value lines
   const mYear = cleaned.match(/(?:year(?:\s*level)?|grade)\s*[:=-]\s*([A-Za-z0-9\s]+)/i);
   const mName = cleaned.match(/name\s*[:=-]\s*([A-Za-z ,.'-]+)/i);
-  if (mName || mYear) {
+  const mCourse = cleaned.match(/(?:course|program)\s*[:=-]\s*([A-Za-z0-9\s]+)/i);
+  if (mName || mYear || mCourse) {
     return {
       name: mName ? mName[1].trim() : cleaned,
-      yearLevel: mYear ? mYear[1].trim() : ''
+      yearLevel: mYear ? mYear[1].trim() : '',
+      course: mCourse ? mCourse[1].trim() : ''
     };
   }
 
-  // Fallback: whole text as name; year left empty for manual input
-  return { name: cleaned, yearLevel: '' };
+  // Fallback: whole text as name
+  return { name: cleaned, yearLevel: '', course: '' };
 }
 
-/* Dialog + save */
+/* Scan dialog + save */
 const dlgWrap=document.getElementById('dlgWrap');
 const dlg=document.getElementById('dlg');
 const dlgName=document.getElementById('dlgName');
 const dlgYear=document.getElementById('dlgYear');
+const dlgCourse=document.getElementById('dlgCourse');
 const dlgDate=document.getElementById('dlgDate');
 const dlgTime=document.getElementById('dlgTime');
 const dlgPurpose=document.getElementById('dlgPurpose');
@@ -300,8 +329,10 @@ const dlgCancel=document.getElementById('dlgCancel');
 function openDialog(prefill){
   dlgName.value = prefill.name || '';
   dlgYear.value = prefill.yearLevel || '';
-  dlgDate.value = todayISO(prefill.when);
-  dlgTime.value = timeHHMMSS(prefill.when);
+  dlgCourse.value = prefill.course || '';
+  const when = prefill.when || new Date();
+  dlgDate.value = todayISO(when);
+  dlgTime.value = timeHHMMSS(when);
   dlgPurpose.value = '';
   dlgExtra.value = '';
   dlgWrap.style.display='flex';
@@ -318,12 +349,13 @@ dlg.addEventListener('submit', async (e)=>{
     timeIn: dlgTime.value,
     name: dlgName.value.trim(),
     yearLevel: dlgYear.value.trim(),
+    course: dlgCourse.value.trim(),
     purpose: (dlgPurpose.value||'').trim(),
     extra: (dlgExtra.value||'').trim(),
     via: 'qr'
   };
-  if(!payload.name || !payload.yearLevel || !payload.purpose){
-    alert('Please ensure Name, Year Level, and Purpose are filled.');
+  if(!payload.name || !payload.yearLevel || !payload.course || !payload.purpose){
+    alert('Please ensure Name, Year Level, Course, and Purpose are filled.');
     return;
   }
   try{ await saveEntryServer(payload); closeDialog(); alert('Scan saved.'); }catch(e){ alert(String(e.message||e)); }
@@ -334,14 +366,9 @@ function handleScan(raw){ const parsed = parseQR(raw); const when=new Date(); op
 const fileBtn=document.createElement('input');
 fileBtn.type='file'; fileBtn.accept='image/*'; fileBtn.capture='environment'; fileBtn.style.display='none';
 document.body.appendChild(fileBtn);
-
 const photoBtn=document.createElement('button');
-photoBtn.className='ghost';
-photoBtn.textContent='Photo Scan (Fallback)';
-photoBtn.style.marginLeft='8px';
-photoBtn.onclick=()=>fileBtn.click();
+photoBtn.className='ghost'; photoBtn.textContent='Photo Scan (Fallback)'; photoBtn.style.marginLeft='8px'; photoBtn.onclick=()=>fileBtn.click();
 btnStart.parentElement.appendChild(photoBtn);
-
 fileBtn.onchange = async ()=>{
   const file = fileBtn.files && fileBtn.files[0]; if(!file) return;
   const det = await ensureDetector(); if(!det){ alert('Photo scan not supported on this browser.'); return; }
@@ -353,7 +380,7 @@ fileBtn.onchange = async ()=>{
   finally{ fileBtn.value=''; }
 };
 
-/* Init */
+/* Init cameras */
 (async function init(){
   if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
     try{ await primeCameraPermission(); }catch{}
@@ -365,6 +392,46 @@ fileBtn.onchange = async ()=>{
 btnStart.onclick = startScan;
 btnStop.onclick = stopScan;
 cameraSel.onchange = ()=>{ if(stream){ stopScan(); startScan(); } };
+
+/* ---------- QR Modal logic after manual save ---------- */
+const qrWrap = document.getElementById('qrWrap');
+const qrTarget = document.getElementById('qrTarget');
+const qrInfo = document.getElementById('qrInfo');
+const qrDownload = document.getElementById('qrDownload');
+const qrClose = document.getElementById('qrClose');
+let _qrInstance = null;
+
+function showQR({ name, year, course, data }){
+  qrTarget.innerHTML = ''; // reset
+  qrInfo.textContent = `${name} • ${year} • ${course}`;
+  // Create QR
+  _qrInstance = new QRCode(qrTarget, {
+    text: data,
+    width: 240,
+    height: 240,
+    correctLevel: QRCode.CorrectLevel.M
+  });
+  qrWrap.style.display = 'flex';
+}
+
+qrClose.onclick = ()=>{ qrWrap.style.display='none'; };
+qrWrap.addEventListener('click', (e)=>{ if(e.target===qrWrap) qrWrap.style.display='none'; });
+
+qrDownload.onclick = ()=>{
+  // qrcodejs either creates <img> or <canvas>; handle both
+  const img = qrTarget.querySelector('img');
+  const canvas = qrTarget.querySelector('canvas');
+  let url = '';
+  if (canvas) url = canvas.toDataURL('image/png');
+  else if (img) url = img.src;
+  if (!url) { alert('QR not ready yet.'); return; }
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'student-qr.png';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>document.body.removeChild(a), 50);
+};
 </script>
 
 </body>
