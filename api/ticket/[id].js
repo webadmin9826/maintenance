@@ -66,48 +66,66 @@ module.exports = async (req, res) => {
        ROUTE A: Library Logs  (/api/ticket/logs)  GET/POST
        DB: process.env.LIB_DB_NAME || 'LibrabryLog', coll: 'timecapture'
        ============================================================ */
-    if (id === 'logs') {
-      const dbName = process.env.LIB_DB_NAME || 'LibrabryLog';
-      const db = client.db(dbName);
-      const col = db.collection('timecapture');
+// ===== Library Logs: /api/ticket/logs  (GET/POST)
+const id = getIdFromReq(req);
+if (id === 'logs') {
+  // Primary name uses your original spelling; we also try the common spelling just in case.
+  const primaryName  = process.env.LIB_DB_NAME || 'LibrabryLog';
+  const fallbackName = primaryName === 'LibrabryLog' ? 'LibraryLog' : 'LibrabryLog';
+  const primaryCol   = client.db(primaryName).collection('timecapture');
+  const fallbackCol  = client.db(fallbackName).collection('timecapture');
 
-      if (req.method === 'GET') {
-        const { q, purpose, course } = req.query || {};
-        const filter = {};
-        if (purpose && String(purpose).trim()) filter.purpose = String(purpose).trim();
-        if (course && String(course).trim()) filter.course = String(course).trim();
-        if (q && String(q).trim()) {
-          const r = rx(q);
-          if (r) filter.$or = [{ name: r }, { purpose: r }, { extra: r }, { yearLevel: r }, { course: r }];
-        }
-        const docs = await col.find(filter).sort({ _id: -1 }).toArray(); // no limit
-        return json(res, 200, docs);
-      }
-
-      if (req.method === 'POST') {
-        const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-        const required = ['date', 'timeIn', 'name', 'yearLevel', 'course', 'purpose'];
-        const miss = required.filter(k => !body[k] || String(body[k]).trim() === '');
-        if (miss.length) return json(res, 400, { error: 'Missing required fields: ' + miss.join(', ') });
-
-        const doc = {
-          date: String(body.date),
-          timeIn: String(body.timeIn),
-          name: String(body.name),
-          yearLevel: String(body.yearLevel),
-          course: String(body.course),
-          purpose: String(body.purpose),
-          extra: body.extra ? String(body.extra) : '',
-          via: body.via ? String(body.via) : 'manual',
-          createdAt: new Date().toISOString()
-        };
-        const r = await col.insertOne(doc);
-        return json(res, 200, { ok: true, _id: r.insertedId.toString() });
-      }
-
-      res.setHeader('Allow', 'GET, POST');
-      return json(res, 405, { error: 'Method Not Allowed' });
+  if (req.method === 'GET') {
+    const { q, purpose, course } = req.query || {};
+    const filter = {};
+    if (purpose && String(purpose).trim()) filter.purpose = String(purpose).trim();
+    if (course  && String(course).trim())  filter.course  = String(course).trim();
+    if (q && String(q).trim()) {
+      const r = rx(q);
+      if (r) filter.$or = [
+        { name: r }, { purpose: r }, { extra: r }, { yearLevel: r }, { course: r }
+      ];
     }
+
+    // read from both DB names; merge & de-dup
+    const [a, b] = await Promise.all([
+      primaryCol.find(filter).sort({ _id: -1 }).toArray(),
+      fallbackCol.find(filter).sort({ _id: -1 }).toArray()
+    ]);
+    const seen = new Set(), merged = [];
+    for (const doc of [...a, ...b]) {
+      const key = String(doc._id);
+      if (seen.has(key)) continue; seen.add(key); merged.push(doc);
+    }
+    return json(res, 200, merged);
+  }
+
+  if (req.method === 'POST') {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const required = ['date','timeIn','name','yearLevel','course','purpose'];
+    const miss = required.filter(k => !body[k] || String(body[k]).trim() === '');
+    if (miss.length) return json(res, 400, { error: 'Missing required fields: ' + miss.join(', ') });
+
+    const doc = {
+      date: String(body.date),
+      timeIn: String(body.timeIn),
+      name: String(body.name),
+      yearLevel: String(body.yearLevel),
+      course: String(body.course),
+      purpose: String(body.purpose),
+      extra: body.extra ? String(body.extra) : '',
+      via:   body.via   ? String(body.via)   : 'manual',
+      createdAt: new Date().toISOString()
+    };
+
+    // write to the primary DB
+    const r = await primaryCol.insertOne(doc);
+    return json(res, 200, { ok: true, _id: r.insertedId.toString() });
+  }
+
+  res.setHeader('Allow', 'GET, POST');
+  return json(res, 405, { error: 'Method Not Allowed' });
+}
 
     /* ============================================================
        ROUTE B: Registrar LIST  (/api/ticket/list)  GET
