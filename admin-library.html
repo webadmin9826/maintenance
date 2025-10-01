@@ -83,7 +83,7 @@ async function fetchLogs(){
   if ($q.value.trim()) params.set('q', $q.value.trim());
   if ($purposeFilter.value) params.set('purpose', $purposeFilter.value);
   if ($courseFilter.value) params.set('course', $courseFilter.value);
-  const r = await fetch('/api/logs?'+params.toString()); // server should return ALL matching rows
+  const r = await fetch('/api/ticket[id].js?'+params.toString()); // server should return ALL matching rows
   if (!r.ok) throw new Error(await readErr(r));
   return r.json();
 }
