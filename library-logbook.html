@@ -111,7 +111,52 @@
 </div>
 
 <script>
-// ===== QR Scan (improved back-camera selection + photo fallback) =====
+// ---------- Shared helpers ----------
+function todayISO(d=new Date()){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), da=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${da}`; }
+function timeHHMMSS(d=new Date()){ const h=String(d.getHours()).padStart(2,'0'), mi=String(d.getMinutes()).padStart(2,'0'), s=String(d.getSeconds()).padStart(2,'0'); return `${h}:${mi}:${s}`; }
+
+// Tabs (fix: enable switching)
+const tabManual = document.getElementById('tabManual');
+const tabScan   = document.getElementById('tabScan');
+const panelManual = document.getElementById('panelManual');
+const panelScan   = document.getElementById('panelScan');
+function setActive(btn, panel){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  tabManual.classList.toggle('active', btn===tabManual);
+  tabScan.classList.toggle('active', btn===tabScan);
+  panelManual.style.display = (panel===panelManual)?'':'none';
+  panelScan.style.display   = (panel===panelScan)?'':'none';
+}
+tabManual.onclick = ()=> setActive(tabManual, panelManual);
+tabScan.onclick   = ()=> setActive(tabScan, panelScan);
+
+// POST helper reused by manual + scan
+async function saveEntryServer(payload){
+  const r = await fetch('/api/logs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  if(!r.ok){ try{ const j=await r.json(); throw new Error(j.error||'Save failed'); }catch(e){ throw new Error('Save failed'); } }
+  return r.json();
+}
+
+// ---------- Manual Entry (fix: add missing handler) ----------
+document.getElementById('btnSaveManual').onclick = async ()=>{
+  const name = document.getElementById('name').value.trim();
+  const year = document.getElementById('year').value.trim();
+  const purpose = document.getElementById('purpose').value.trim();
+  const extra = document.getElementById('extra').value.trim();
+  if(!name || !year || !purpose){ alert('Please fill in Name, Year Level, and Purpose.'); return; }
+  const now = new Date();
+  const payload = { date: todayISO(now), timeIn: timeHHMMSS(now), name, yearLevel: year, purpose, extra: extra||null, via: 'manual' };
+  try{
+    await saveEntryServer(payload);
+    alert('Entry saved.');
+    document.getElementById('name').value='';
+    document.getElementById('year').value='';
+    document.getElementById('purpose').value='';
+    document.getElementById('extra').value='';
+  }catch(e){ alert(String(e.message||e)); }
+};
+
+// ---------- QR Scan (improved back-camera selection + photo fallback) ----------
 const scanMsg = document.getElementById('scanMsg');
 const video = document.getElementById('video');
 const cameraSel = document.getElementById('camera');
@@ -120,147 +165,97 @@ const btnStop = document.getElementById('btnStop');
 
 let stream = null, rafId = null, detector = null, scanning = false;
 
-// Request a quick permission stream so device labels are populated (iOS/Safari needs this).
-async function primeCameraPermission() {
-  try {
+// iOS/Safari labels often require an initial permission prompt
+async function primeCameraPermission(){
+  try{
     const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    s.getTracks().forEach(t => t.stop());
-  } catch (e) {
-    // user might deny; we’ll surface the error later on start
-  }
+    s.getTracks().forEach(t=>t.stop());
+  }catch{}
 }
-
-async function enumerateCameras() {
+async function enumerateCameras(){
   const devices = await navigator.mediaDevices.enumerateDevices();
-  const cams = devices.filter(d => d.kind === 'videoinput');
-  cameraSel.textContent = '';
-  cams.forEach((c, i) => {
-    const opt = document.createElement('option');
-    opt.value = c.deviceId;
-    opt.textContent = c.label || `Camera ${i+1}`;
+  const cams = devices.filter(d=>d.kind==='videoinput');
+  cameraSel.textContent='';
+  cams.forEach((c,i)=>{
+    const opt=document.createElement('option');
+    opt.value=c.deviceId; opt.textContent=c.label||`Camera ${i+1}`;
     cameraSel.appendChild(opt);
   });
   return cams;
 }
-
-function pickBestBackCamera(cams) {
-  if (!cams || !cams.length) return null;
-  // Prefer labels that indicate back/rear/environment
-  let preferred = cams.find(c => /back|rear|environment/i.test(c.label || ''));
-  if (!preferred) preferred = cams[cams.length - 1]; // last often is back on some devices
-  return preferred.deviceId || null;
+function pickBestBackCamera(cams){
+  if(!cams||!cams.length) return null;
+  let preferred = cams.find(c=>/back|rear|environment/i.test(c.label||''));
+  if(!preferred) preferred=cams[cams.length-1];
+  return preferred.deviceId||null;
 }
-
-async function ensureDetector() {
-  if (!('BarcodeDetector' in window)) return null;
-  if (!detector) {
-    try { detector = new BarcodeDetector({ formats: ['qr_code'] }); }
-    catch { detector = null; }
+async function ensureDetector(){
+  if(!('BarcodeDetector' in window)) return null;
+  if(!detector){
+    try{ detector = new BarcodeDetector({ formats:['qr_code'] }); }
+    catch{ detector=null; }
   }
   return detector;
 }
-
-async function startScan() {
-  scanMsg.textContent = '';
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    scanMsg.textContent = 'Camera API not supported on this device/browser.';
-    return;
+async function startScan(){
+  scanMsg.textContent='';
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    scanMsg.textContent='Camera API not supported on this device/browser.'; return;
   }
-
-  // Close any previous stream
-  stopScan();
-
-  // Get permission and labels
+  stopScan(); // close previous
   await primeCameraPermission();
   const cams = await enumerateCameras();
-  if (!cams.length) {
-    scanMsg.textContent = 'No cameras found. Check browser permissions.';
-    return;
-  }
-
-  // Pick back camera if possible
+  if(!cams.length){ scanMsg.textContent='No cameras found. Check permissions.'; return; }
   const backId = pickBestBackCamera(cams);
-
-  const constraints = {
-    audio: false,
-    video: backId
-      ? { deviceId: { exact: backId } }
-      : { facingMode: { ideal: 'environment' } } // fallback
-  };
-
-  try {
+  const constraints = { audio:false, video: backId ? { deviceId:{ exact: backId } } : { facingMode:{ ideal:'environment' } } };
+  try{
     stream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = stream;
-    await video.play();
-
-    scanning = true;
-    btnStart.disabled = true;
-    btnStop.disabled = false;
-
-    // Try to use native detector; if not available we still show the video (manual entry remains available).
+    video.srcObject = stream; await video.play();
+    scanning = true; btnStart.disabled=true; btnStop.disabled=false;
     const det = await ensureDetector();
-    if (!det) {
-      scanMsg.textContent = 'Live scan not supported on this browser. Use Manual Entry or Photo Scan below.';
-      return;
-    }
+    if(!det){ scanMsg.textContent='Live scan not supported. Use Manual Entry or Photo Scan below.'; return; }
     loopDetect();
-  } catch (err) {
-    scanMsg.textContent = 'Cannot start camera: ' + (err.message || err.name || err);
+  }catch(err){
+    scanMsg.textContent='Cannot start camera: '+(err.message||err.name||err);
   }
 }
-
-function stopScan() {
-  scanning = false;
-  if (rafId) cancelAnimationFrame(rafId);
-  if (stream) {
-    stream.getTracks().forEach(t => t.stop());
-    stream = null;
-  }
-  if (video.srcObject) {
-    video.pause();
-    video.srcObject = null;
-  }
-  btnStart.disabled = false;
-  btnStop.disabled = true;
+function stopScan(){
+  scanning=false;
+  if(rafId) cancelAnimationFrame(rafId);
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  if(video.srcObject){ video.pause(); video.srcObject=null; }
+  btnStart.disabled=false; btnStop.disabled=true;
 }
-
-async function loopDetect() {
-  if (!scanning || !detector) return;
-  try {
+async function loopDetect(){
+  if(!scanning || !detector) return;
+  try{
     const results = await detector.detect(video);
-    if (results && results.length) {
+    if(results && results.length){
       const code = results[0].rawValue || '';
       handleScan(code);
       stopScan();
       return;
     }
-  } catch {}
+  }catch{}
   rafId = requestAnimationFrame(loopDetect);
 }
-
-function parseQR(text) {
-  try {
-    const j = JSON.parse(text);
-    if (j && j.name) return { name: String(j.name), yearLevel: String(j.yearLevel || '') };
-  } catch {}
-  if (text.includes('|')) { const [n, y] = text.split('|'); return { name: n.trim(), yearLevel: (y || '').trim() }; }
-  if (text.includes(',')) { const [n, y] = text.split(','); return { name: n.trim(), yearLevel: (y || '').trim() }; }
-  return { name: text.trim(), yearLevel: '' };
+function parseQR(text){
+  try{ const j=JSON.parse(text); if(j && j.name) return { name:String(j.name), yearLevel:String(j.yearLevel||'') }; }catch{}
+  if(text.includes('|')){ const [n,y]=text.split('|'); return { name:n.trim(), yearLevel:(y||'').trim() }; }
+  if(text.includes(',')){ const [n,y]=text.split(','); return { name:n.trim(), yearLevel:(y||'').trim() }; }
+  return { name:text.trim(), yearLevel:'' };
 }
 
-// ---- Confirmation dialog (unchanged from your version) ----
-const dlgWrap = document.getElementById('dlgWrap');
-const dlg = document.getElementById('dlg');
-const dlgName = document.getElementById('dlgName');
-const dlgYear = document.getElementById('dlgYear');
-const dlgDate = document.getElementById('dlgDate');
-const dlgTime = document.getElementById('dlgTime');
-const dlgPurpose = document.getElementById('dlgPurpose');
-const dlgExtra = document.getElementById('dlgExtra');
-const dlgCancel = document.getElementById('dlgCancel');
-
-function todayISO(d=new Date()){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), da=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${da}`; }
-function timeHHMMSS(d=new Date()){ const h=String(d.getHours()).padStart(2,'0'), mi=String(d.getMinutes()).padStart(2,'0'), s=String(d.getSeconds()).padStart(2,'0'); return `${h}:${mi}:${s}`; }
+// Dialog + save (shared with your version)
+const dlgWrap=document.getElementById('dlgWrap');
+const dlg=document.getElementById('dlg');
+const dlgName=document.getElementById('dlgName');
+const dlgYear=document.getElementById('dlgYear');
+const dlgDate=document.getElementById('dlgDate');
+const dlgTime=document.getElementById('dlgTime');
+const dlgPurpose=document.getElementById('dlgPurpose');
+const dlgExtra=document.getElementById('dlgExtra');
+const dlgCancel=document.getElementById('dlgCancel');
 
 function openDialog(prefill){
   dlgName.value = prefill.name || '';
@@ -269,18 +264,12 @@ function openDialog(prefill){
   dlgTime.value = timeHHMMSS(prefill.when);
   dlgPurpose.value = '';
   dlgExtra.value = '';
-  dlgWrap.style.display = 'flex';
-  setTimeout(()=>dlgPurpose.focus(), 10);
+  dlgWrap.style.display='flex';
+  setTimeout(()=>dlgPurpose.focus(),10);
 }
 function closeDialog(){ dlgWrap.style.display='none'; }
 dlgCancel.onclick = closeDialog;
-document.addEventListener('click', (e)=>{ if(e.target === dlgWrap) closeDialog(); });
-
-async function saveEntryServer(payload){
-  const r = await fetch('/api/logs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-  if(!r.ok){ try{ const j=await r.json(); throw new Error(j.error||'Save failed'); }catch(e){ throw new Error('Save failed'); } }
-  return r.json();
-}
+document.addEventListener('click',(e)=>{ if(e.target===dlgWrap) closeDialog(); });
 
 dlg.addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -296,46 +285,21 @@ dlg.addEventListener('submit', async (e)=>{
   if(!payload.purpose) return alert('Please enter purpose.');
   try{ await saveEntryServer(payload); closeDialog(); alert('Scan saved.'); }catch(e){ alert(String(e.message||e)); }
 });
+function handleScan(raw){ const parsed = parseQR(raw); const when=new Date(); openDialog({ ...parsed, when }); }
 
-function handleScan(raw){
-  const parsed = parseQR(raw);
-  const when = new Date();
-  openDialog({ ...parsed, when });
-}
-
-// Optional photo fallback: allow capturing a still image with the back camera and try to detect QR codes in it (only if BarcodeDetector exists)
-const fileBtn = document.createElement('input');
-fileBtn.type = 'file';
-fileBtn.accept = 'image/*';
-fileBtn.capture = 'environment'; // hint for back camera on mobile
-fileBtn.style.display = 'none';
-document.body.appendChild(fileBtn);
-
-const photoBtn = document.createElement('button');
-photoBtn.className = 'ghost';
-photoBtn.textContent = 'Photo Scan (Fallback)';
-photoBtn.style.marginLeft = '8px';
-photoBtn.onclick = () => fileBtn.click();
+// Photo fallback
+const fileBtn=document.createElement('input'); fileBtn.type='file'; fileBtn.accept='image/*'; fileBtn.capture='environment'; fileBtn.style.display='none'; document.body.appendChild(fileBtn);
+const photoBtn=document.createElement('button'); photoBtn.className='ghost'; photoBtn.textContent='Photo Scan (Fallback)'; photoBtn.style.marginLeft='8px'; photoBtn.onclick=()=>fileBtn.click();
 btnStart.parentElement.appendChild(photoBtn);
-
-fileBtn.onchange = async () => {
-  const file = fileBtn.files && fileBtn.files[0];
-  if (!file) return;
-  const det = await ensureDetector();
-  if (!det) { alert('Photo scan not supported on this browser.'); return; }
+fileBtn.onchange = async ()=>{
+  const file = fileBtn.files && fileBtn.files[0]; if(!file) return;
+  const det = await ensureDetector(); if(!det){ alert('Photo scan not supported on this browser.'); return; }
   const bmp = await createImageBitmap(file);
-  try {
+  try{
     const results = await det.detect(bmp);
-    if (results && results.length) {
-      handleScan(results[0].rawValue || '');
-    } else {
-      alert('No QR code detected in the photo. Try again with better lighting/focus.');
-    }
-  } catch (e) {
-    alert('Could not analyze the photo.');
-  } finally {
-    fileBtn.value = '';
-  }
+    if(results && results.length){ handleScan(results[0].rawValue||''); } else { alert('No QR code detected. Try better lighting/focus.'); }
+  }catch{ alert('Could not analyze the photo.'); }
+  finally{ fileBtn.value=''; }
 };
 
 // Init
@@ -349,7 +313,7 @@ fileBtn.onchange = async () => {
 })();
 btnStart.onclick = startScan;
 btnStop.onclick = stopScan;
-cameraSel.onchange = ()=>{ if(stream) { stopScan(); startScan(); } };
+cameraSel.onchange = ()=>{ if(stream){ stopScan(); startScan(); } };
 </script>
 
 </body>
