@@ -95,7 +95,16 @@
     <h3 id="dlgTitle" style="margin:0 0 8px">Confirm Scan</h3>
     <div class="row">
       <div><label>Name</label><input id="dlgName" readonly></div>
-      <div><label>Year Level</label><input id="dlgYear" readonly></div>
+      <div>
+        <label>Year Level *</label>
+        <input id="dlgYear" list="yearLevelsDlg" placeholder="Select or type…" required>
+        <datalist id="yearLevelsDlg">
+          <option>Grade 11</option><option>Grade 12</option>
+          <option>1st Year</option><option>2nd Year</option>
+          <option>3rd Year</option><option>4th Year</option>
+          <option>5th Year</option>
+        </datalist>
+      </div>
     </div>
     <div class="row">
       <div><label>Date</label><input id="dlgDate" readonly></div>
@@ -111,11 +120,11 @@
 </div>
 
 <script>
-// ---------- Shared helpers ----------
+/* ---------- Shared helpers ---------- */
 function todayISO(d=new Date()){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), da=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${da}`; }
 function timeHHMMSS(d=new Date()){ const h=String(d.getHours()).padStart(2,'0'), mi=String(d.getMinutes()).padStart(2,'0'), s=String(d.getSeconds()).padStart(2,'0'); return `${h}:${mi}:${s}`; }
 
-// Tabs (fix: enable switching)
+/* Tabs */
 const tabManual = document.getElementById('tabManual');
 const tabScan   = document.getElementById('tabScan');
 const panelManual = document.getElementById('panelManual');
@@ -130,14 +139,17 @@ function setActive(btn, panel){
 tabManual.onclick = ()=> setActive(tabManual, panelManual);
 tabScan.onclick   = ()=> setActive(tabScan, panelScan);
 
-// POST helper reused by manual + scan
+/* POST helper used by manual + scan */
 async function saveEntryServer(payload){
   const r = await fetch('/api/logs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-  if(!r.ok){ try{ const j=await r.json(); throw new Error(j.error||'Save failed'); }catch(e){ throw new Error('Save failed'); } }
+  if(!r.ok){
+    try{ const j=await r.json(); throw new Error(j.error||'Save failed'); }
+    catch(e){ throw new Error('Save failed'); }
+  }
   return r.json();
 }
 
-// ---------- Manual Entry (fix: add missing handler) ----------
+/* ---------- Manual Entry ---------- */
 document.getElementById('btnSaveManual').onclick = async ()=>{
   const name = document.getElementById('name').value.trim();
   const year = document.getElementById('year').value.trim();
@@ -156,7 +168,7 @@ document.getElementById('btnSaveManual').onclick = async ()=>{
   }catch(e){ alert(String(e.message||e)); }
 };
 
-// ---------- QR Scan (improved back-camera selection + photo fallback) ----------
+/* ---------- QR Scan (improved back-camera + photo fallback) ---------- */
 const scanMsg = document.getElementById('scanMsg');
 const video = document.getElementById('video');
 const cameraSel = document.getElementById('camera');
@@ -165,7 +177,6 @@ const btnStop = document.getElementById('btnStop');
 
 let stream = null, rafId = null, detector = null, scanning = false;
 
-// iOS/Safari labels often require an initial permission prompt
 async function primeCameraPermission(){
   try{
     const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -197,6 +208,7 @@ async function ensureDetector(){
   }
   return detector;
 }
+
 async function startScan(){
   scanMsg.textContent='';
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
@@ -239,14 +251,42 @@ async function loopDetect(){
   }catch{}
   rafId = requestAnimationFrame(loopDetect);
 }
+
+/* More robust QR parsing */
 function parseQR(text){
-  try{ const j=JSON.parse(text); if(j && j.name) return { name:String(j.name), yearLevel:String(j.yearLevel||'') }; }catch{}
-  if(text.includes('|')){ const [n,y]=text.split('|'); return { name:n.trim(), yearLevel:(y||'').trim() }; }
-  if(text.includes(',')){ const [n,y]=text.split(','); return { name:n.trim(), yearLevel:(y||'').trim() }; }
-  return { name:text.trim(), yearLevel:'' };
+  const cleaned = String(text||'').trim();
+
+  // JSON payloads with flexible keys
+  try {
+    const j = JSON.parse(cleaned);
+    const name = j.name || j.Name || j.fullname || j.fullName;
+    const yl = j.yearLevel || j.yearlevel || j.year || j.grade || j.Grade;
+    if (name) return { name: String(name), yearLevel: yl ? String(yl) : '' };
+  } catch {}
+
+  // Common delimiters: | , ; - or newline
+  const parts = cleaned.split(/\s*[|,;\n-]\s*/);
+  if (parts.length >= 2 && parts[0]) return { name: parts[0].trim(), yearLevel: (parts[1]||'').trim() };
+
+  // Parentheses: "Name (Year Level)"
+  const mParen = cleaned.match(/^(.+)\(([^)]+)\)\s*$/);
+  if (mParen) return { name: mParen[1].trim(), yearLevel: mParen[2].trim() };
+
+  // Key:Value lines
+  const mYear = cleaned.match(/(?:year(?:\s*level)?|grade)\s*[:=-]\s*([A-Za-z0-9\s]+)/i);
+  const mName = cleaned.match(/name\s*[:=-]\s*([A-Za-z ,.'-]+)/i);
+  if (mName || mYear) {
+    return {
+      name: mName ? mName[1].trim() : cleaned,
+      yearLevel: mYear ? mYear[1].trim() : ''
+    };
+  }
+
+  // Fallback: whole text as name; year left empty for manual input
+  return { name: cleaned, yearLevel: '' };
 }
 
-// Dialog + save (shared with your version)
+/* Dialog + save */
 const dlgWrap=document.getElementById('dlgWrap');
 const dlg=document.getElementById('dlg');
 const dlgName=document.getElementById('dlgName');
@@ -276,21 +316,32 @@ dlg.addEventListener('submit', async (e)=>{
   const payload = {
     date: dlgDate.value,
     timeIn: dlgTime.value,
-    name: dlgName.value,
-    yearLevel: dlgYear.value,
+    name: dlgName.value.trim(),
+    yearLevel: dlgYear.value.trim(),
     purpose: (dlgPurpose.value||'').trim(),
     extra: (dlgExtra.value||'').trim(),
     via: 'qr'
   };
-  if(!payload.purpose) return alert('Please enter purpose.');
+  if(!payload.name || !payload.yearLevel || !payload.purpose){
+    alert('Please ensure Name, Year Level, and Purpose are filled.');
+    return;
+  }
   try{ await saveEntryServer(payload); closeDialog(); alert('Scan saved.'); }catch(e){ alert(String(e.message||e)); }
 });
 function handleScan(raw){ const parsed = parseQR(raw); const when=new Date(); openDialog({ ...parsed, when }); }
 
-// Photo fallback
-const fileBtn=document.createElement('input'); fileBtn.type='file'; fileBtn.accept='image/*'; fileBtn.capture='environment'; fileBtn.style.display='none'; document.body.appendChild(fileBtn);
-const photoBtn=document.createElement('button'); photoBtn.className='ghost'; photoBtn.textContent='Photo Scan (Fallback)'; photoBtn.style.marginLeft='8px'; photoBtn.onclick=()=>fileBtn.click();
+/* Photo fallback */
+const fileBtn=document.createElement('input');
+fileBtn.type='file'; fileBtn.accept='image/*'; fileBtn.capture='environment'; fileBtn.style.display='none';
+document.body.appendChild(fileBtn);
+
+const photoBtn=document.createElement('button');
+photoBtn.className='ghost';
+photoBtn.textContent='Photo Scan (Fallback)';
+photoBtn.style.marginLeft='8px';
+photoBtn.onclick=()=>fileBtn.click();
 btnStart.parentElement.appendChild(photoBtn);
+
 fileBtn.onchange = async ()=>{
   const file = fileBtn.files && fileBtn.files[0]; if(!file) return;
   const det = await ensureDetector(); if(!det){ alert('Photo scan not supported on this browser.'); return; }
@@ -302,7 +353,7 @@ fileBtn.onchange = async ()=>{
   finally{ fileBtn.value=''; }
 };
 
-// Init
+/* Init */
 (async function init(){
   if(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){
     try{ await primeCameraPermission(); }catch{}
