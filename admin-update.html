@@ -60,6 +60,9 @@
         <th style="width:160px">Student</th>
         <th style="width:150px">Request Type</th>
         <th style="width:120px">Target (days)</th>
+        <th style="width:120px">OR #</th>
+        <th style="width:170px">In-Charge Received</th>
+        <th style="width:150px">Received By</th>
         <th>Remarks</th>
         <th style="width:140px">Timeliness</th>
         <th style="width:260px">Actions</th>
@@ -76,7 +79,7 @@
   </div>
 </div>
 
-<!-- Edit Details Modal -->
+<!-- Edit Details Modal (unchanged, already edits these fields) -->
 <div id="dlgWrap" class="dlg-wrap" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
   <form id="dlg" class="dlg">
     <h3 id="dlgTitle">Edit Details</h3>
@@ -146,7 +149,7 @@ function renderTable(){
 
   $rows.textContent='';
   if(!pageRows.length){
-    const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=7; td.textContent='No records.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr);
+    const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=10; td.textContent='No records.'; td.className='muted'; tr.appendChild(td); $rows.appendChild(tr);
   } else {
     for(const t of pageRows){
       const tr=document.createElement('tr');
@@ -156,15 +159,18 @@ function renderTable(){
       const td1=document.createElement('td'); td1.textContent=(t.studentName||'')+(t.studentId? ' ('+t.studentId+')':'');
       const td2=document.createElement('td'); td2.textContent=t.requestType||'';
       const td3=document.createElement('td'); td3.textContent=t.targetDays??'';
-      const td4=document.createElement('td'); td4.textContent=t.remarks||'';
-      const td5=document.createElement('td'); td5.textContent = t.timeliness || label(t);
-      const td6=document.createElement('td');
+      const td4=document.createElement('td'); td4.textContent=t.orNumber || '—';
+      const td5=document.createElement('td'); td5.textContent=t.dateReceivedFromIncharge ? fmt(t.dateReceivedFromIncharge) : '—';
+      const td6=document.createElement('td'); td6.textContent=t.receivedBy || '—';
+      const td7=document.createElement('td'); td7.textContent=t.remarks||'';
+      const td8=document.createElement('td'); td8.textContent = t.timeliness || label(t);
+      const td9=document.createElement('td');
       const b1=document.createElement('button'); b1.className='ghost'; b1.textContent=t.status==='Received'?'Mark Released':'Mark Received';
       b1.onclick=async()=>{ const ns=t.status==='Received'?'Released':'Received'; const set={status:ns}; if(ns==='Released') set.dateRelease=new Date().toISOString(); else set.dateRelease=null; await patch(t._id,set); await fetchAndRender(false); };
       const b2=document.createElement('button'); b2.className='danger'; b2.textContent='Delete'; b2.style.marginLeft='6px'; b2.onclick=async()=>{ if(!confirm('Delete ticket?'))return; await del(t._id); await fetchAndRender(false); };
       const b3=document.createElement('button'); b3.className='ghost'; b3.textContent='Edit Details'; b3.style.marginLeft='6px'; b3.onclick=()=>openDlg(t);
-      td6.append(b1,b3,b2);
-      tr.append(td0,td1,td2,td3,td4,td5,td6); $rows.appendChild(tr);
+      td9.append(b1,b3,b2);
+      tr.append(td0,td1,td2,td3,td4,td5,td6,td7,td8,td9); $rows.appendChild(tr);
     }
   }
 
@@ -192,7 +198,7 @@ $pageSize.onchange=()=>{ _page = 1; renderTable(); };
 $prev.onclick=()=>{ if(_page>1){ _page--; renderTable(); } };
 $next.onclick=()=>{ const totalPages = Math.max(1, Math.ceil(_list.length / (parseInt($pageSize.value,10)||10))); if(_page<totalPages){ _page++; renderTable(); } };
 
-// ----- Modal logic -----
+// ----- Modal logic (already edits OR, In-Charge Received, Received By) -----
 const $dlgWrap = document.getElementById('dlgWrap');
 const $dlg = document.getElementById('dlg');
 const $dlgTarget = document.getElementById('dlgTarget');
@@ -242,12 +248,9 @@ $dlg.addEventListener('submit', async (e)=>{
   const v = $dlgIncharge.value.trim();
   set.dateReceivedFromIncharge = v ? new Date(v).toISOString() : null;
 
-  // If user sets status to Released and current row has no dateRelease, set it now
   if (set.status === 'Released' && !_editRow.dateRelease) {
     set.dateRelease = new Date().toISOString();
   }
-  // If switching away from Released, you may choose to null out dateRelease (commented)
-  // if (_editRow.status === 'Released' && set.status !== 'Released') set.dateRelease = null;
 
   try{
     await patch(_editRow._id, set);
@@ -261,7 +264,7 @@ $dlg.addEventListener('submit', async (e)=>{
 // initial
 fetchAndRender(true);
 
-// Export
+// Export (already includes the three new fields)
 document.getElementById('exportBtn').onclick=async()=>{
   try{
     const p=new URLSearchParams();
