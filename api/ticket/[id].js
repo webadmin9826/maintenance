@@ -70,8 +70,8 @@ module.exports = async (req, res) => {
 const id = getIdFromReq(req);
 if (id === 'logs') {
   // Primary name uses your original spelling; we also try the common spelling just in case.
-  const primaryName  = process.env.LIB_DB_NAME || 'LibrabryLog';
-  const fallbackName = primaryName === 'LibrabryLog' ? 'LibraryLog' : 'LibrabryLog';
+  const primaryName  = process.env.LIB_DB_NAME || 'ticketingDB';
+  const fallbackName = primaryName === 'ticketingDB' ? 'ticketingDB' : 'ticketingDB';
   const primaryCol   = client.db(primaryName).collection('timecapture');
   const fallbackCol  = client.db(fallbackName).collection('timecapture');
 
