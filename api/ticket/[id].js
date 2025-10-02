@@ -58,8 +58,8 @@ module.exports = async (req, res) => {
 
     /* ============ Library Logs: /api/ticket/logs (GET/POST) ============ */
     if (routeId === 'logs') {
-      const primaryName  = process.env.LIB_DB_NAME || 'LibrabryLog'; // your original spelling
-      const fallbackName = primaryName === 'LibrabryLog' ? 'LibraryLog' : 'LibrabryLog';
+      const primaryName  = process.env.LIB_DB_NAME || 'ticketingDB'; // your original spelling
+      const fallbackName = primaryName === 'ticketingDB' ? 'ticketingDB' : 'ticketingDB';
       const primaryCol   = client.db(primaryName).collection('timecapture');
       const fallbackCol  = client.db(fallbackName).collection('timecapture');
 
