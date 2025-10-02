@@ -18,7 +18,7 @@ function timeHHMMSS(d=new Date()){
 module.exports = async (req, res) => {
   try {
     const client = await clientPromise;
-    const db = client.db(process.env.DB_NAME || 'LibrabryLog'); // keep your requested name
+    const db = client.db(process.env.DB_NAME || 'ticketingDB'); // keep your requested name
     const Col = db.collection('timecapture');
 
     if (req.method === 'POST') {
