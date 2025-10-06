@@ -1,0 +1,29 @@
+<header class="site-header">
+  <style>
+    :root{--ink:#e5e7eb;--muted:#94a3b8;--card:#0b1324;--line:#1f2937;--bg:#0b1220;--accent:#22c55e}
+    .site-header{position:sticky;top:0;z-index:100;background:var(--card);border-bottom:1px solid var(--line)}
+    .site-header .sh-wrap{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;gap:16px;align-items:center;justify-content:space-between}
+    .site-header a{color:var(--ink);text-decoration:none}
+    .site-header .brand a{font-weight:800;letter-spacing:.2px}
+    .site-header .nav{display:flex;gap:10px;flex-wrap:wrap}
+    .site-header .nav a{padding:8px 12px;border-radius:10px;border:1px solid transparent;opacity:.9}
+    .site-header .nav a:hover{border-color:#2b3750}
+    .site-header .nav a.active{background:var(--accent);color:#031;border-color:transparent;opacity:1}
+  </style>
+  <div class="sh-wrap">
+    <div class="brand"><a href="/">🏫 Campus Suite</a></div>
+    <nav class="nav">
+      <!-- Registrar -->
+      <a href="/admin-entry.html" data-id="reg-entry">Registrar Entry</a>
+      <a href="/admin-update.html" data-id="reg-update">Registrar Update</a>
+      <a href="/admin-reports.html" data-id="reg-reports">Registrar Reports</a>
+      <!-- Maintenance -->
+      <a href="/landing-maintenance.html" data-id="maint-landing">Maintenance</a>
+      <a href="/admin.html" data-id="maint-equip">Equipment Admin</a>
+      <a href="/admin-classroom-panel.html" data-id="maint-class">Classroom Admin</a>
+      <!-- Library -->
+      <a href="/library-admin.html" data-id="lib-admin">Library Admin</a>
+      <a href="/library-login.html" data-id="lib-login">Library Login</a>
+    </nav>
+  </div>
+</header>
